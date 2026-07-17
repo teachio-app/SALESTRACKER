@@ -58,11 +58,29 @@ export type Ticket = {
   vgg_event_id: string | null;
   comment: string | null;
   paid_out: boolean;         // has the payout reached the bank account?
+  sales: SaleFill[];         // itemised sales; sell_price/qty_sold are their sums
   profit: number;
   sold_at: string | null;
   created_at: string;
   updated_at: string;
 };
+
+// One partial sale of a batch. `amount` is the TOTAL for the fill, not per-ticket.
+export type SaleFill = {
+  qty: number;
+  amount: number;
+  at?: string | null;   // sale date (ISO)
+  ext?: string;         // poller dedup key
+  source?: string;
+};
+
+/** Roll a fills list up into the row aggregates. */
+export function saleTotals(fills: SaleFill[] | null | undefined): { qty: number; amount: number } {
+  return (fills ?? []).reduce(
+    (a, f) => ({ qty: a.qty + (Number(f.qty) || 0), amount: a.amount + (Number(f.amount) || 0) }),
+    { qty: 0, amount: 0 }
+  );
+}
 
 export const TICKET_TYPES = ["Mobile", "PDF", "Hard ticket", "Season card"] as const;
 

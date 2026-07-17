@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Ticket } from "@/lib/supabase";
+import { saleTotals, type Ticket } from "@/lib/supabase";
 import PurchaseModal, { EMPTY_PURCHASE } from "@/app/PurchaseModal";
 import SellModal from "@/app/SellModal";
 import Sidebar from "./Sidebar";
@@ -90,7 +90,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     openSell: (t) => setSelling(t),
     copyRow: (t) => {
       const { id, created_at, updated_at, profit, external_id, sold_at, ...rest } = t;
-      setEditing({ ...rest, event_name: t.event_name + " (copy)" });
+      // A copy is a fresh purchase: keep the buy side, clear the sale side.
+      setEditing({
+        ...rest, event_name: t.event_name + " (copy)",
+        sales: [], qty_sold: 0, sell_price: 0, status: "not_listed", paid_out: false,
+      });
     },
     openLink: (t) => setLinking(t),
     // Move the review row's sell side onto the chosen purchase, then delete the
@@ -98,14 +102,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     linkSale: async (reviewRow, purchase) => {
       setLinking(null);
       setTickets((prev) => prev.filter((x) => x.id !== reviewRow.id));
+      // Move the review row's sales onto the purchase and re-sum the aggregates.
+      const fills = [...(purchase.sales ?? []), ...(reviewRow.sales ?? [])];
+      const t = saleTotals(fills);
       await fetch("/api/tickets", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: purchase.id,
-          qty_sold: reviewRow.qty_sold,
+          sales: fills,
+          qty_sold: Math.min(purchase.qty_total, t.qty),
           status: "sold",
-          sell_price: reviewRow.sell_price,
+          sell_price: t.amount,
           sold_at: reviewRow.sold_at,
           order_ref: reviewRow.order_ref ?? purchase.order_ref,
         }),

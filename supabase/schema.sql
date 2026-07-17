@@ -74,6 +74,22 @@ alter table tickets add column if not exists comment        text;
 -- after the event. Toggled by the checkbox in the events table.
 alter table tickets add column if not exists paid_out       boolean not null default false;
 
+-- Individual sales that make up a batch: a purchase of 4 can sell as 2 @ €240
+-- then 2 @ €200. Each element is { qty, amount, at, ext? } where amount is the
+-- TOTAL for that fill. sell_price / qty_sold on the row stay as the aggregates
+-- (app keeps them in step), so the generated profit column and all filters keep
+-- working; this column just holds the itemised detail so it can be edited.
+alter table tickets add column if not exists sales          jsonb not null default '[]';
+
+-- One-time seed: turn each already-sold row's aggregate into a single fill, so
+-- existing rows show their sale in the new editor. Only touches rows that have
+-- no itemised sales yet, so it's safe to re-run.
+update tickets
+set sales = jsonb_build_array(jsonb_build_object(
+  'qty', qty_sold, 'amount', sell_price, 'at', coalesce(sold_at::text, event_date::text)
+))
+where qty_sold > 0 and sales = '[]'::jsonb;
+
 -- ── Poller watermark ─────────────────────────────────────────────────
 -- Where the mail poller got to, so processing state lives HERE and not in the
 -- owner's mailbox.

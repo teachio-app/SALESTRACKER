@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { fetchNewEmails } from "@/lib/mail";
 import { processEmail, type ParsedSale } from "@/lib/parsers";
 import { isViagogoPayment, parseViagogoPayment } from "@/lib/parsers/viagogoPayment";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, saleTotals, type SaleFill, type Ticket } from "@/lib/supabase";
 import { notifyDiscord, notifyPayment } from "@/lib/discord";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +18,7 @@ const seatKey = (r: { section: string | null; seat_row: string | null; seats: st
 
 type MatchResult =
   | { kind: "duplicate" }
-  | { kind: "match"; id: string; order_ref: string | null }
+  | { kind: "match"; row: Ticket }
   | { kind: "none" };
 
 /**
@@ -39,12 +39,15 @@ async function findMatch(db: Db, sale: ParsedSale): Promise<MatchResult> {
 
   const { data: cands } = await db
     .from("tickets").select("*").eq("event_date", sale.eventDate).neq("status", "sold");
-  const matches = (cands ?? []).filter(
+  const matches = ((cands ?? []) as Ticket[]).filter(
     (r) => r.qty_sold < r.qty_total && seatKey(r) === key && (norm(r.section) !== "" || norm(r.seats) !== "")
   );
-  return matches.length === 1
-    ? { kind: "match", id: matches[0].id, order_ref: matches[0].order_ref }
-    : { kind: "none" };
+  return matches.length === 1 ? { kind: "match", row: matches[0] } : { kind: "none" };
+}
+
+/** Build the fill for a parsed sale. */
+function fillFrom(sale: ParsedSale, at: string): SaleFill {
+  return { qty: sale.qty, amount: sale.sellPrice, at, ext: sale.externalId, source: sale.source };
 }
 
 export async function GET(req: Request) {
@@ -84,18 +87,25 @@ export async function GET(req: Request) {
     const m = await findMatch(db, sale);
     if (m.kind === "duplicate") { stats.duplicate++; continue; }
 
+    const at = email.date.toISOString().slice(0, 10);
+
     if (m.kind === "match") {
-      // Fill the SELL side of the existing purchase; keep the owner's event
-      // name, location and buy price. external_id stamps it for dedup.
+      // APPEND this sale as a fill onto the purchase — so a batch selling in
+      // parts accumulates instead of overwriting. Per-fill ext dedups reprocesses.
+      const existing: SaleFill[] = Array.isArray(m.row.sales) ? m.row.sales : [];
+      if (existing.some((f) => f.ext === sale.externalId)) { stats.duplicate++; continue; }
+      const fills = [...existing, fillFrom(sale, at)];
+      const t = saleTotals(fills);
       const { error } = await db.from("tickets").update({
-        qty_sold: sale.qty,
+        sales: fills,
+        qty_sold: Math.min(m.row.qty_total, t.qty),
+        sell_price: t.amount,
         status: "sold",
-        sell_price: sale.sellPrice,
         currency: sale.currency,
         sold_at: email.date.toISOString(),
-        order_ref: sale.orderRef ?? m.order_ref,
-        external_id: sale.externalId,
-      }).eq("id", m.id);
+        order_ref: sale.orderRef ?? m.row.order_ref,
+        external_id: m.row.external_id ?? sale.externalId, // stamp once for dedup
+      }).eq("id", m.row.id);
       if (error) { console.error("Match update failed:", error); failed = true; continue; }
       stats.matched++;
       await notifyDiscord(sale);
@@ -121,6 +131,7 @@ export async function GET(req: Request) {
       external_id: sale.externalId,
       needs_review: true,
       sold_at: email.date.toISOString(),
+      sales: [fillFrom(sale, at)],
     });
     if (error && error.code === "23505") { stats.duplicate++; continue; }
     if (error) { console.error("Insert failed:", error); failed = true; continue; }

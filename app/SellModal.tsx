@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { type Ticket, realizedCost, realizedProfit } from "@/lib/supabase";
+import { type Ticket, saleTotals } from "@/lib/supabase";
 
-// The sell side lives here, apart from the purchase form. Normally the mail
-// poller writes these fields; this is the manual override for sales that never
-// produced an email — or that the parser flagged for review.
+// Quick "record a sale" — APPENDS a fill to the batch's sales, so selling part
+// of a batch now and the rest later (at a different price) just adds another
+// entry. Full editing of the list lives in the Edit modal.
 
 function toNum(s: string): number {
   const n = parseFloat(s.replace(",", "."));
@@ -19,77 +19,70 @@ export default function SellModal({
   onSave: (t: Partial<Ticket>) => void;
   onClose: () => void;
 }) {
-  const [sellText, setSellText] = useState(ticket.sell_price ? ticket.sell_price.toFixed(2) : "");
-  const [qtySold, setQtySold] = useState(ticket.qty_sold || ticket.qty_total);
-  const [status, setStatus] = useState<Ticket["status"]>(ticket.status === "sold" ? "sold" : "sold");
+  const already = saleTotals(ticket.sales);
+  const remaining = Math.max(0, ticket.qty_total - already.qty);
+  const [amountText, setAmountText] = useState("");
+  const [qty, setQty] = useState(remaining || ticket.qty_total);
 
-  const sell = toNum(sellText);
-  // Preview the realized numbers for the quantity being sold, not the whole
-  // batch — matches how the row will read after saving.
-  const preview = { buy_price: ticket.buy_price, sell_price: sell, qty_sold: qtySold, qty_total: ticket.qty_total };
-  const cost = realizedCost(preview);
-  const profit = realizedProfit(preview);
-  const known = ticket.buy_price > 0;
-  const partial = qtySold > 0 && qtySold < ticket.qty_total;
+  const amount = toNum(amountText);
+  const perTicket = qty > 0 ? amount / qty : 0;
+
+  function save() {
+    const fills = [
+      ...(ticket.sales ?? []),
+      { qty, amount, at: new Date().toISOString().slice(0, 10), source: "manual" },
+    ];
+    const t = saleTotals(fills);
+    onSave({
+      id: ticket.id,
+      sales: fills,
+      sell_price: t.amount,
+      qty_sold: Math.min(ticket.qty_total, t.qty),
+      status: "sold",
+    });
+  }
 
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
         <header className="modal-head">
-          <h2>Record sale</h2>
+          <h2>Record a sale</h2>
           <button className="modal-x" onClick={onClose} aria-label="Close">×</button>
         </header>
 
         <div className="modal-body">
-          <p className="modal-lede">{ticket.event_name}</p>
+          <p className="modal-lede">
+            {ticket.event_name}
+            {already.qty > 0 && <> · <span className="unknown">{already.qty}/{ticket.qty_total} already sold</span></>}
+          </p>
 
           <div className="grid-3">
             <label className="field">
-              <span className="field-label">Sell price <i className="req">*</i></span>
-              <input inputMode="decimal" autoFocus value={sellText}
-                     onChange={(e) => setSellText(e.target.value)} placeholder="675.00" />
+              <span className="field-label">Qty this sale</span>
+              <input type="number" min={1} max={remaining || ticket.qty_total} value={qty}
+                     onChange={(e) => setQty(Math.max(1, +e.target.value))} />
             </label>
             <label className="field">
-              <span className="field-label">Qty sold</span>
-              <input type="number" min={0} max={ticket.qty_total} value={qtySold}
-                     onChange={(e) => setQtySold(Math.min(ticket.qty_total, Math.max(0, +e.target.value)))} />
+              <span className="field-label">Amount (total) <i className="req">*</i></span>
+              <input inputMode="decimal" autoFocus value={amountText}
+                     onChange={(e) => setAmountText(e.target.value)} placeholder="480.00" />
             </label>
             <label className="field">
-              <span className="field-label">Status</span>
-              <select value={status} onChange={(e) => setStatus(e.target.value as Ticket["status"])}>
-                <option value="sold">Sold</option>
-                <option value="listed">Listed</option>
-                <option value="not_listed">Not listed</option>
-              </select>
+              <span className="field-label">Per ticket</span>
+              <input value={amount ? perTicket.toFixed(2) : ""} readOnly placeholder="—" />
             </label>
           </div>
 
-          {/* Show the arithmetic rather than let it be a surprise after saving. */}
           <div className="sell-preview">
-            {known ? (
-              <>
-                <span>{partial ? `Cost of ${qtySold}/${ticket.qty_total}` : "Buy"} {cost.toFixed(2)}</span>
-                <span className="op">→</span>
-                <span>Sell {sell.toFixed(2)}</span>
-                <span className="op">=</span>
-                <strong className={profit >= 0 ? "profit-pos" : "profit-neg"}>
-                  {profit >= 0 ? "+" : "−"}{Math.abs(profit).toFixed(2)} {ticket.currency}
-                </strong>
-              </>
-            ) : (
-              <span className="unknown">
-                No buy price on this row yet — profit stays unknown until you add one.
-              </span>
-            )}
+            {remaining > 0 && qty >= remaining
+              ? <span>This completes the batch ({ticket.qty_total}/{ticket.qty_total}).</span>
+              : <span>After this: <strong>{Math.min(ticket.qty_total, already.qty + qty)}/{ticket.qty_total}</strong> sold.</span>}
           </div>
         </div>
 
         <footer className="modal-foot">
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" disabled={!sell}
-                  onClick={() => onSave({ id: ticket.id, sell_price: sell, qty_sold: qtySold, status })}>
-            Save sale
-          </button>
+          <button className="btn btn-primary" disabled={!amount || qty < 1} onClick={save}>Add sale</button>
         </footer>
       </div>
     </div>

@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { TICKET_TYPES, CURRENCIES, type Ticket } from "@/lib/supabase";
+import { TICKET_TYPES, CURRENCIES, saleTotals, type Ticket, type SaleFill } from "@/lib/supabase";
 
 // ─────────────────────────────────────────────────────────────
-// The purchase side, and only the purchase side. Everything here is something
-// the owner knows at buy time; nothing here comes from a sale email. The sell
-// price is deliberately absent — the poller owns it, and the Sell button edits
-// it separately. One field, one owner.
+// Add / edit a purchase, including its individual sales. A batch can sell in
+// parts at different prices (2 @ €240, then 2 @ €200); the Sales list holds each
+// fill, and sell_price / qty_sold are their sums (computed on save).
 //
 // Price per ticket and Total price are two views of ONE number. Only the total
 // is stored (buy_price); per-ticket is total ÷ count. Typing in either box
@@ -35,6 +34,7 @@ export const EMPTY_PURCHASE: Partial<Ticket> = {
   payment_method: "",
   vgg_event_id: "",
   comment: "",
+  sales: [],
 };
 
 /** Money in, money out — tolerate "375,60" as well as "375.60". */
@@ -63,7 +63,15 @@ export default function PurchaseModal({
   // Local text state so a half-typed "18" doesn't get reformatted to "18.00".
   const [perText, setPerText] = useState(() => money(count > 0 ? total / count : 0));
   const [totalText, setTotalText] = useState(() => money(total));
-  const [sellText, setSellText] = useState(() => money(form.sell_price ?? 0));
+
+  const fills: SaleFill[] = form.sales ?? [];
+  const soldTotals = saleTotals(fills);
+  const setFills = (next: SaleFill[]) => set("sales", next);
+  const setFill = (i: number, patch: Partial<SaleFill>) =>
+    setFills(fills.map((f, j) => (j === i ? { ...f, ...patch } : f)));
+  const addFill = () =>
+    setFills([...fills, { qty: 1, amount: 0, at: new Date().toISOString().slice(0, 10) }]);
+  const removeFill = (i: number) => setFills(fills.filter((_, j) => j !== i));
 
   function editPer(text: string) {
     setPerText(text);
@@ -85,12 +93,19 @@ export default function PurchaseModal({
     setPerText(money(toNum(totalText) / c));
   }
 
-  function editSell(text: string) {
-    setSellText(text);
-    set("sell_price", toNum(text));
-  }
-
   const invalid = !form.event_name?.trim() || !form.location?.trim();
+
+  function submit() {
+    // Derive the row aggregates from the fills so they never drift from the list.
+    const t = saleTotals(fills);
+    onSave({
+      ...form,
+      sales: fills,
+      sell_price: t.amount,
+      qty_sold: Math.min(count, t.qty),
+      status: t.qty > 0 ? "sold" : form.status ?? "not_listed",
+    });
+  }
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -166,24 +181,36 @@ export default function PurchaseModal({
             </Field>
           </div>
 
-          {/* Sale side — normally filled by the poller, editable here so a typo
-              (wrong sell price, wrong count) can be fixed in one place. */}
-          <div className="modal-section">Sale</div>
-          <div className="grid-3">
-            <Field label="Sell price" hint="total received">
-              <input inputMode="decimal" value={sellText} onChange={(e) => editSell(e.target.value)} placeholder="0.00" />
-            </Field>
-            <Field label="Qty sold" hint={`of ${count}`}>
-              <input type="number" min={0} max={count} value={form.qty_sold ?? 0}
-                     onChange={(e) => set("qty_sold", Math.min(count, Math.max(0, +e.target.value)))} />
-            </Field>
-            <Field label="Status">
-              <select value={form.status ?? "not_listed"} onChange={(e) => set("status", e.target.value as Ticket["status"])}>
-                <option value="sold">Sold</option>
-                <option value="listed">Listed</option>
-                <option value="not_listed">Not listed</option>
-              </select>
-            </Field>
+          {/* Sales — one row per partial sale, so a batch can sell in pieces at
+              different prices. sell_price / qty sold are the sums, on save. */}
+          <div className="modal-section">
+            Sales
+            <span className="section-sum">
+              {soldTotals.qty}/{count} sold · {soldTotals.amount.toFixed(2)} {form.currency ?? "EUR"}
+            </span>
+          </div>
+          <div className="fills">
+            {fills.length === 0 && <div className="fills-empty">No sales yet. Add one when a batch (or part of it) sells.</div>}
+            {fills.map((f, i) => (
+              <div className="fill-row" key={i}>
+                <label className="fill-cell">
+                  <span>Qty</span>
+                  <input type="number" min={1} value={f.qty}
+                         onChange={(e) => setFill(i, { qty: Math.max(0, +e.target.value) })} />
+                </label>
+                <label className="fill-cell">
+                  <span>Amount (total)</span>
+                  <input inputMode="decimal" value={f.amount || ""} placeholder="0.00"
+                         onChange={(e) => setFill(i, { amount: toNum(e.target.value) })} />
+                </label>
+                <label className="fill-cell">
+                  <span>Date</span>
+                  <input type="date" value={f.at ?? ""} onChange={(e) => setFill(i, { at: e.target.value })} />
+                </label>
+                <button className="fill-x" onClick={() => removeFill(i)} title="Remove this sale" type="button">×</button>
+              </div>
+            ))}
+            <button className="btn btn-ghost btn-sm fill-add" type="button" onClick={addFill}>+ Add sale</button>
           </div>
 
           <Field label="Comment" full>
@@ -195,7 +222,7 @@ export default function PurchaseModal({
         <footer className="modal-foot">
           {invalid && <span className="foot-hint">Event name and location are required</span>}
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" disabled={invalid} onClick={() => onSave(form)}>
+          <button className="btn btn-primary" disabled={invalid} onClick={submit}>
             {form.id ? "Update purchase" : "Add purchase"}
           </button>
         </footer>

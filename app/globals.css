@@ -308,10 +308,27 @@ select { cursor: pointer; }
 .grid-3 .field { margin-bottom: 0; }
 /* Divider label inside a modal (e.g. "Sale") */
 .modal-section {
+  display: flex; align-items: baseline; gap: 8px;
   color: var(--text-3); font-size: 10.5px; font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.06em;
   margin: 16px 0 10px; padding-top: 12px; border-top: 1px solid var(--border);
 }
+.section-sum { color: var(--text-2); font-weight: 500; text-transform: none; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+
+/* Sales (fills) editor */
+.fills { display: flex; flex-direction: column; gap: 8px; }
+.fills-empty { color: var(--text-3); font-size: 12.5px; }
+.fill-row { display: flex; align-items: flex-end; gap: 10px; }
+.fill-cell { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.fill-cell span { color: var(--text-3); font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+.fill-cell:first-child { flex: 0 0 74px; }
+.fill-x {
+  flex: 0 0 auto; background: transparent; border: 1px solid var(--border-strong);
+  color: var(--text-3); border-radius: var(--radius); width: 36px; height: 38px;
+  font-size: 18px; cursor: pointer;
+}
+.fill-x:hover { color: var(--bad); border-color: var(--bad); }
+.fill-add { align-self: flex-start; margin-top: 2px; }
 /* Comment sits outside the 3-col grid, so it needs its own gap above. */
 .modal-body > .field { margin-top: 14px; margin-bottom: 0; }
 
