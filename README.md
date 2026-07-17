@@ -15,6 +15,15 @@ Viagogo / Seatix email  →  IMAP poller (Vercel cron)  →  parser  →  Supaba
 
 Discord is **notification only** — it never feeds data back into the app.
 
+## Access
+
+The dashboard and `/api/tickets` sit behind a short **HTTP Basic Auth** gate
+(`middleware.ts`, `APP_USER` / `APP_PASSWORD`) — the browser's native
+username/password prompt, no login page. `/api/cron/poll-mail` is excluded and
+keeps its own `CRON_SECRET` Bearer auth, so the external pinger reaches it without
+the login. The two auth schemes share the `Authorization` header but never
+collide because the cron path is outside the middleware matcher.
+
 ## Two sides, two owners
 
 The dashboard splits a ticket row down the middle, and the split is the design:
@@ -166,7 +175,9 @@ natively and the external pinger isn't needed.
 3. Add env vars in Vercel → Settings → Environment Variables — the same keys as
    `.env.local`: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
    `SUPABASE_SERVICE_ROLE_KEY`, `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`,
-   `IMAP_PASSWORD`, `DISCORD_WEBHOOK_URL`, `CRON_SECRET`.
+   `IMAP_PASSWORD`, `DISCORD_WEBHOOK_URL`, `APP_USER`, `APP_PASSWORD`,
+   `CRON_SECRET`. **Without `APP_USER`/`APP_PASSWORD` the app fails closed (503)** —
+   the login gate refuses to serve rather than expose the dashboard.
 4. Deploy. Then set up the cron-job.org pinger above.
 5. Test once by hand:
    `curl -H "Authorization: Bearer <CRON_SECRET>" https://<app>.vercel.app/api/cron/poll-mail`
