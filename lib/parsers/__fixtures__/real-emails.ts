@@ -89,6 +89,36 @@ Ticket qty	2
 €480.00
 Questions about your payout? Learn more`;
 
+// A viagogo payout email — money actually paid, covering several orders.
+export const VIAGOGO_PAYMENT_SUBJECT = "viagogo payment 66726239 - You have just been paid";
+export const VIAGOGO_PAYMENT = `Hello Petr,
+
+We processed your payment on Friday, 17 July 2026.
+
+View Payment Info
+
+Payment reference # 66726239
+Paid to: IBAN (Envoy - Euro): **************89
+
+Depending on your payment provider, it may take up to 8 business days for the funds to appear in your account.
+
+If you selected PayPal as your payment method, you'll need to log in to your PayPal account to accept the payment.
+
+Payment ID	Order ID	Order Date	Payment	Ticket(s)
+Bad Bunny
+66726239	643845545	21-May-26 05:42 PM	€472.90
+2
+Norway vs England - World Cup - Quarter-Finals (Match 99)
+66726239	648353121	11-Jul-26 02:22 AM	€2,004.12
+1
+Norway vs England - World Cup - Quarter-Finals (Match 99)
+66726239	648390697	11-Jul-26 04:32 PM	€1,687.68
+1
+Payment:	€4,164.70
+If you see a charge listed and believe it's incorrect, submit a dispute.
+
+Copyright © 2026 viagogo. All rights reserved`;
+
 export function asEmail(text: string, subject = "") {
   return { from: "catchall@thevortex.beauty", subject, text, html: "", date: new Date() };
 }

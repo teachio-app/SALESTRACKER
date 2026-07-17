@@ -5,6 +5,7 @@ import type { Ticket } from "@/lib/supabase";
 import PurchaseModal, { EMPTY_PURCHASE } from "@/app/PurchaseModal";
 import SellModal from "@/app/SellModal";
 import Sidebar from "./Sidebar";
+import LinkModal from "./LinkModal";
 import { DashProvider, type DashCtx } from "./DashContext";
 
 // Owns the ticket data and the modals for the whole dashboard, and hands them to
@@ -17,6 +18,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Partial<Ticket> | null>(null);
   const [selling, setSelling] = useState<Ticket | null>(null);
+  const [linking, setLinking] = useState<Ticket | null>(null);
   // Shared across Events + Charts so the chosen window carries between pages.
   const [period, setPeriod] = useState("all");
 
@@ -90,6 +92,31 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       const { id, created_at, updated_at, profit, external_id, sold_at, ...rest } = t;
       setEditing({ ...rest, event_name: t.event_name + " (copy)" });
     },
+    openLink: (t) => setLinking(t),
+    // Move the review row's sell side onto the chosen purchase, then delete the
+    // review row. Optimistic drop of the review row keeps the list steady.
+    linkSale: async (reviewRow, purchase) => {
+      setLinking(null);
+      setTickets((prev) => prev.filter((x) => x.id !== reviewRow.id));
+      await fetch("/api/tickets", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: purchase.id,
+          qty_sold: reviewRow.qty_sold,
+          status: "sold",
+          sell_price: reviewRow.sell_price,
+          sold_at: reviewRow.sold_at,
+          order_ref: reviewRow.order_ref ?? purchase.order_ref,
+        }),
+      });
+      await fetch("/api/tickets", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: reviewRow.id }),
+      });
+      load(true);
+    },
   };
 
   return (
@@ -100,6 +127,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </div>
       {editing && <PurchaseModal ticket={editing} onSave={save} onClose={() => setEditing(null)} />}
       {selling && <SellModal ticket={selling} onSave={save} onClose={() => setSelling(null)} />}
+      {linking && <LinkModal reviewRow={linking} onClose={() => setLinking(null)} />}
     </DashProvider>
   );
 }

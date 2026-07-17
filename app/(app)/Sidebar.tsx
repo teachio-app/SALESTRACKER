@@ -7,14 +7,16 @@ import { useDash } from "./DashContext";
 // Rename the app here.
 const APP_NAME = "TICKETDESK";
 
-const NAV = [
-  { href: "/", label: "Events" },
-  { href: "/charts", label: "Charts" },
-];
-
 export default function Sidebar() {
   const path = usePathname();
-  const { openAdd } = useDash();
+  const { openAdd, tickets } = useDash();
+  const reviewCount = tickets.filter((t) => t.needs_review).length;
+
+  const NAV = [
+    { href: "/", label: "Events", badge: 0 },
+    { href: "/charts", label: "Charts", badge: 0 },
+    { href: "/review", label: "Review", badge: reviewCount },
+  ];
 
   return (
     <aside className="sidebar">
@@ -38,6 +40,7 @@ export default function Sidebar() {
         <Link key={n.href} href={n.href}
               className={"nav-btn" + (path === n.href ? " is-active" : "")}>
           {n.label}
+          {n.badge > 0 && <span className="nav-badge">{n.badge}</span>}
         </Link>
       ))}
     </aside>

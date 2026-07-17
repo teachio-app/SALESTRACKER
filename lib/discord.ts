@@ -1,4 +1,18 @@
 import { ParsedSale } from "./parsers";
+import type { ViagogoPayment } from "./parsers/viagogoPayment";
+
+async function post(url: string, body: unknown): Promise<void> {
+  try {
+    await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    // A Discord hiccup must never break the poll.
+    console.error("Discord notify failed:", err);
+  }
+}
 
 // Fire-and-forget Discord notification. Discord is notification-only here —
 // it never feeds data back into the app.
@@ -29,14 +43,31 @@ export async function notifyDiscord(sale: ParsedSale): Promise<void> {
     timestamp: new Date().toISOString(),
   };
 
-  try {
-    await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ embeds: [embed] }),
-    });
-  } catch (err) {
-    // Don't let a Discord hiccup break the poll.
-    console.error("Discord notify failed:", err);
-  }
+  await post(url, { embeds: [embed] });
+}
+
+// Payout notification — a separate webhook (DISCORD_PAYMENT_WEBHOOK_URL) so
+// "money landed" pings can go to their own channel, apart from sale alerts.
+export async function notifyPayment(payment: ViagogoPayment): Promise<void> {
+  const url = process.env.DISCORD_PAYMENT_WEBHOOK_URL;
+  if (!url) return;
+
+  const lines = payment.items.map(
+    (it) => `• ${it.eventName ?? "—"} — €${it.amount.toFixed(2)}${it.qty ? ` (${it.qty})` : ""}`
+  );
+
+  const embed = {
+    title: `💸 Paid out — €${payment.total.toFixed(2)}`,
+    color: 0x3987e5,
+    description: lines.join("\n") || undefined,
+    fields: [
+      { name: "Reference", value: payment.reference, inline: true },
+      ...(payment.paidOn ? [{ name: "Processed", value: payment.paidOn, inline: true }] : []),
+      { name: "Orders", value: String(payment.items.length), inline: true },
+    ],
+    footer: { text: "viagogo · may take up to 8 business days to hit the bank" },
+    timestamp: new Date().toISOString(),
+  };
+
+  await post(url, { embeds: [embed] });
 }

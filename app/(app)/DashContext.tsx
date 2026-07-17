@@ -21,6 +21,9 @@ export type DashCtx = {
   openEdit: (t: Partial<Ticket>) => void;
   openSell: (t: Ticket) => void;
   copyRow: (t: Ticket) => void;
+  openLink: (reviewRow: Ticket) => void;
+  /** Merge a flagged sale into an existing purchase, then drop the sale row. */
+  linkSale: (reviewRow: Ticket, purchase: Ticket) => Promise<void>;
 };
 
 const Ctx = createContext<DashCtx | null>(null);

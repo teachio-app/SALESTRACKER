@@ -4,7 +4,11 @@
 import { parseViagogo } from "./viagogo";
 import { parseSeatix } from "./seatix";
 import { classify } from "./classify";
-import { SEATIX_SALE, VIAGOGO_SALE, VIAGOGO_CONCERT, asEmail } from "./__fixtures__/real-emails";
+import { parseViagogoPayment, isViagogoPayment } from "./viagogoPayment";
+import {
+  SEATIX_SALE, VIAGOGO_SALE, VIAGOGO_CONCERT,
+  VIAGOGO_PAYMENT, VIAGOGO_PAYMENT_SUBJECT, asEmail,
+} from "./__fixtures__/real-emails";
 
 let failed = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -55,6 +59,24 @@ check("location", c?.location, "O2 Arena, London");
 check("eventDate", c?.eventDate, "2026-08-21");
 check("qty", c?.qty, 2);
 check("sellPrice", c?.sellPrice, 480);
+
+console.log("\nparseViagogoPayment()");
+const payEmail = asEmail(VIAGOGO_PAYMENT, VIAGOGO_PAYMENT_SUBJECT);
+check("recognised as payment", isViagogoPayment(payEmail), true);
+const pay = parseViagogoPayment(payEmail);
+check("reference", pay?.reference, "66726239");
+check("paidOn", pay?.paidOn, "2026-07-17");
+check("total", pay?.total, 4164.7);
+check("item count", pay?.items.length, 3);
+check("item[0] orderId", pay?.items[0].orderId, "643845545");
+check("item[0] event", pay?.items[0].eventName, "Bad Bunny");
+check("item[0] amount", pay?.items[0].amount, 472.9);
+check("item[0] qty", pay?.items[0].qty, 2);
+check("item[1] orderId", pay?.items[1].orderId, "648353121");
+check("item[1] event", pay?.items[1].eventName, "Norway vs England - World Cup - Quarter-Finals (Match 99)");
+check("item[1] amount", pay?.items[1].amount, 2004.12);
+check("item[2] amount", pay?.items[2].amount, 1687.68);
+check("a sale email is NOT a payment", isViagogoPayment(asEmail(VIAGOGO_SALE)), false);
 
 console.log("\nCross-parser: neither parser may claim the other's email");
 check("viagogo parser on seatix mail → null", parseViagogo(asEmail(SEATIX_SALE)), null);
