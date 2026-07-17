@@ -63,6 +63,7 @@ export default function PurchaseModal({
   // Local text state so a half-typed "18" doesn't get reformatted to "18.00".
   const [perText, setPerText] = useState(() => money(count > 0 ? total / count : 0));
   const [totalText, setTotalText] = useState(() => money(total));
+  const [sellText, setSellText] = useState(() => money(form.sell_price ?? 0));
 
   function editPer(text: string) {
     setPerText(text);
@@ -82,6 +83,11 @@ export default function PurchaseModal({
     // Count is the divisor: hold the total, re-derive per-ticket. Holding
     // per-ticket instead would silently rewrite what was actually paid.
     setPerText(money(toNum(totalText) / c));
+  }
+
+  function editSell(text: string) {
+    setSellText(text);
+    set("sell_price", toNum(text));
   }
 
   const invalid = !form.event_name?.trim() || !form.location?.trim();
@@ -157,6 +163,26 @@ export default function PurchaseModal({
             <Field label="VGG event ID">
               <input value={form.vgg_event_id ?? ""} onChange={(e) => set("vgg_event_id", e.target.value)}
                      placeholder="151804250" />
+            </Field>
+          </div>
+
+          {/* Sale side — normally filled by the poller, editable here so a typo
+              (wrong sell price, wrong count) can be fixed in one place. */}
+          <div className="modal-section">Sale</div>
+          <div className="grid-3">
+            <Field label="Sell price" hint="total received">
+              <input inputMode="decimal" value={sellText} onChange={(e) => editSell(e.target.value)} placeholder="0.00" />
+            </Field>
+            <Field label="Qty sold" hint={`of ${count}`}>
+              <input type="number" min={0} max={count} value={form.qty_sold ?? 0}
+                     onChange={(e) => set("qty_sold", Math.min(count, Math.max(0, +e.target.value)))} />
+            </Field>
+            <Field label="Status">
+              <select value={form.status ?? "not_listed"} onChange={(e) => set("status", e.target.value as Ticket["status"])}>
+                <option value="sold">Sold</option>
+                <option value="listed">Listed</option>
+                <option value="not_listed">Not listed</option>
+              </select>
             </Field>
           </div>
 

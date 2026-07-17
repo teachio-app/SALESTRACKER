@@ -306,6 +306,12 @@ select { cursor: pointer; }
 .field-label .req { color: var(--accent); font-style: normal; }
 .field-hint { color: var(--text-3); font-weight: 400; text-transform: none; letter-spacing: 0; }
 .grid-3 .field { margin-bottom: 0; }
+/* Divider label inside a modal (e.g. "Sale") */
+.modal-section {
+  color: var(--text-3); font-size: 10.5px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  margin: 16px 0 10px; padding-top: 12px; border-top: 1px solid var(--border);
+}
 /* Comment sits outside the 3-col grid, so it needs its own gap above. */
 .modal-body > .field { margin-top: 14px; margin-bottom: 0; }
 
