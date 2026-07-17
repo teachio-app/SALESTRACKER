@@ -70,6 +70,9 @@ alter table tickets add column if not exists email_used     text;
 alter table tickets add column if not exists payment_method text;
 alter table tickets add column if not exists vgg_event_id   text;
 alter table tickets add column if not exists comment        text;
+-- Has the payout actually landed in the bank? Sold ≠ paid — platforms pay days
+-- after the event. Toggled by the checkbox in the events table.
+alter table tickets add column if not exists paid_out       boolean not null default false;
 
 -- ── Poller watermark ─────────────────────────────────────────────────
 -- Where the mail poller got to, so processing state lives HERE and not in the

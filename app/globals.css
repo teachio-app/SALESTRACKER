@@ -67,6 +67,7 @@ body {
   color: var(--text-2); background: transparent; cursor: pointer;
   font: inherit; font-size: 13.5px;
   margin-bottom: 2px;
+  text-decoration: none;  /* nav items are <a> now, not just <button> */
 }
 .nav-btn:hover { background: var(--panel-2); color: var(--text); }
 .nav-btn.is-active { background: var(--panel-2); color: var(--text); font-weight: 500; }
@@ -85,6 +86,24 @@ body {
 .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
 .toolbar h1 { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
 .summary { display: flex; gap: 22px; margin-left: auto; }
+
+/* Period selector on the charts page */
+.period-tabs { display: flex; gap: 4px; margin-left: auto; }
+.period-tab {
+  background: var(--panel); border: 1px solid var(--border-strong);
+  color: var(--text-2); border-radius: var(--radius);
+  padding: 5px 12px; font: inherit; font-size: 12.5px; cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.period-tab:hover { background: var(--panel-2); color: var(--text); }
+.period-tab.is-active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* Paid checkbox in the events table */
+.paid-cell { text-align: center; }
+.paid-check {
+  width: 17px; height: 17px; cursor: pointer; accent-color: var(--good);
+  margin: 0; vertical-align: middle;
+}
 .summary .stat { text-align: right; }
 .summary .stat .label { color: var(--text-3); font-size: 11px; }
 .summary .stat .value { font-weight: 600; font-size: 16px; }
@@ -173,7 +192,7 @@ body {
 }
 
 /* ── Controls ── */
-input, select, textarea {
+input:not([type="checkbox"]):not([type="radio"]), select, textarea {
   width: 100%;
   background: var(--bg);
   border: 1px solid var(--border-strong);

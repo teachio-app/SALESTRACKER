@@ -57,6 +57,7 @@ export type Ticket = {
   payment_method: string | null;
   vgg_event_id: string | null;
   comment: string | null;
+  paid_out: boolean;         // has the payout reached the bank account?
   profit: number;
   sold_at: string | null;
   created_at: string;
