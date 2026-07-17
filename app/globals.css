@@ -54,13 +54,18 @@ body {
   flex-shrink: 0;
 }
 .logo {
+  display: flex;
+  align-items: center;
+  gap: 9px;
   font-weight: 700;
   font-size: 15px;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
   color: var(--text);
   padding: 0 8px;
   margin-bottom: 22px;
 }
+.logo-mark { flex-shrink: 0; width: 22px; height: 22px; line-height: 0; }
+.logo-mark svg { width: 22px; height: 22px; display: block; }
 .nav-btn {
   display: block; width: 100%; text-align: left;
   padding: 8px 10px; border-radius: var(--radius); border: none;

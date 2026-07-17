@@ -20,8 +20,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // Shared across Events + Charts so the chosen window carries between pages.
   const [period, setPeriod] = useState("all");
 
-  async function load() {
-    setLoading(true);
+  // `silent` refetches without flipping the full-page loading state. The loading
+  // state swaps the whole table for a "Loading…" line, which collapses the page
+  // and throws the scroll back to the top. Only the FIRST load shows it; every
+  // refetch after an edit is silent, so the list stays put where you are.
+  async function load(silent = false) {
+    if (!silent) setLoading(true);
     try {
       const res = await fetch("/api/tickets");
       const body = await res.json();
@@ -32,33 +36,40 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
-      setTickets([]);
+      if (!silent) setTickets([]);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
   useEffect(() => { load(); }, []);
 
   async function save(t: Partial<Ticket>) {
     const method = t.id ? "PATCH" : "POST";
+    // Optimistic: reflect an edit on the row immediately so a checkbox/dropdown
+    // doesn't wait on the round trip. Stable keys mean React updates in place —
+    // no unmount, no scroll jump. The silent refetch then reconciles with what
+    // the server actually stored (generated profit, sold_at, …).
+    if (t.id) setTickets((prev) => prev.map((x) => (x.id === t.id ? { ...x, ...t } : x)));
+    setEditing(null);
+    setSelling(null);
     await fetch("/api/tickets", {
       method,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(t),
     });
-    setEditing(null);
-    setSelling(null);
-    load();
+    load(true);
   }
 
   async function remove(id: string) {
     if (!confirm("Delete this row?")) return;
+    // Drop it locally first, then confirm with a silent refetch.
+    setTickets((prev) => prev.filter((x) => x.id !== id));
     await fetch("/api/tickets", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     });
-    load();
+    load(true);
   }
 
   const ctx: DashCtx = {
