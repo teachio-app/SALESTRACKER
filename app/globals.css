@@ -111,15 +111,23 @@ body {
 /* "3/4 priced" — the headline covers only rows whose cost we know. */
 .stat-caveat { color: var(--warn); }
 
-/* ── Charts ── */
-.charts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
-  gap: 12px;
-  margin-bottom: 18px;
+/* ── Charts dashboard ── */
+.dash { display: flex; flex-direction: column; gap: 12px; margin-bottom: 18px; }
+
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+@media (max-width: 760px) { .kpis { grid-template-columns: repeat(2, 1fr); } }
+.kpi {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 14px 16px;
 }
+.kpi-label { color: var(--text-3); font-size: 11px; margin-bottom: 7px; }
+.kpi-value { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+
+.cap-split { display: flex; align-items: flex-start; justify-content: space-between; }
+.cap-split > div:first-child { display: flex; align-items: baseline; gap: 8px; }
+.chart-hero { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+
 .chart-notice {
-  grid-column: 1 / -1;
   background: var(--warn-bg);
   border: 1px solid var(--warn-border);
   color: #f0d9a0;
