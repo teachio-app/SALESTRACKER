@@ -121,6 +121,9 @@ body {
 
 .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 @media (max-width: 760px) { .kpis { grid-template-columns: repeat(2, 1fr); } }
+
+/* Two charts side by side (stacks to one column when narrow). */
+.dash-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 12px; }
 .kpi {
   background: var(--panel); border: 1px solid var(--border);
   border-radius: var(--radius-lg); padding: 14px 16px;

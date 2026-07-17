@@ -99,10 +99,12 @@ function ticks(min: number, max: number, n = 4): number[] {
   return out;
 }
 
-const W = 920;
-const CH = 250; // cumulative (hero)
-const BH = 190; // bars
-const PAD = { top: 18, right: 18, bottom: 28, left: 52 };
+// Half-width viewBox so, side by side, each chart renders near 1:1 instead of
+// being stretched across the whole page (which magnified every mark).
+const W = 600;
+const CH = 250;
+const BH = 250;
+const PAD = { top: 16, right: 16, bottom: 26, left: 46 };
 
 export default function ProfitChart({ tickets }: { tickets: Ticket[] }) {
   // Priced sold rows: realized profit needs both a sale and a known cost.
@@ -185,7 +187,8 @@ export default function ProfitChart({ tickets }: { tickets: Ticket[] }) {
         <Kpi label="ROI" value={`${roi.toFixed(1)}%`} tone={roi >= 0 ? "pos" : "neg"} />
       </div>
 
-      {/* ── Cumulative curve (hero) ── */}
+      <div className="dash-charts">
+      {/* ── Cumulative curve ── */}
       <figure className="chart-card">
         <figcaption className="cap-split">
           <div>
@@ -214,8 +217,8 @@ export default function ProfitChart({ tickets }: { tickets: Ticket[] }) {
             <line x1={PAD.left} x2={W - PAD.right} y1={cy(0)} y2={cy(0)} stroke={BASELINE} strokeWidth={1} />
           )}
           <path d={area} fill="url(#cumGrad)" />
-          <path d={line} fill="none" stroke={lineColor} strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
-          <circle cx={cx(data.length - 1)} cy={cy(last.cum)} r={5.5} fill={lineColor} stroke={SURFACE} strokeWidth={2.5} />
+          <path d={line} fill="none" stroke={lineColor} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+          <circle cx={cx(data.length - 1)} cy={cy(last.cum)} r={4.5} fill={lineColor} stroke={SURFACE} strokeWidth={2} />
 
           {data.map((d, i) => {
             const x0 = Math.max(PAD.left, cx(i) - band / 2);
@@ -228,7 +231,7 @@ export default function ProfitChart({ tickets }: { tickets: Ticket[] }) {
           {hover?.chart === "line" && (
             <>
               <line x1={cx(hover.i)} x2={cx(hover.i)} y1={PAD.top} y2={PAD.top + cPlotH} stroke={MUTED} strokeWidth={1} opacity={0.5} />
-              <circle cx={cx(hover.i)} cy={cy(data[hover.i].cum)} r={5.5} fill={lineColor} stroke={SURFACE} strokeWidth={2.5} />
+              <circle cx={cx(hover.i)} cy={cy(data[hover.i].cum)} r={4.5} fill={lineColor} stroke={SURFACE} strokeWidth={2} />
               <Tooltip x={cx(hover.i)} y={PAD.top} title={data[hover.i].label}
                        lines={[`${fmt(data[hover.i].cum)} EUR total`]} />
             </>
@@ -284,6 +287,7 @@ export default function ProfitChart({ tickets }: { tickets: Ticket[] }) {
           )}
         </svg>
       </figure>
+      </div>
     </div>
   );
 }
