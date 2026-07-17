@@ -1,7 +1,9 @@
 "use client";
 
-import { type Ticket, realizedProfit, realizedRoi } from "@/lib/supabase";
+import { useMemo } from "react";
+import { type Ticket, realizedProfit, realizedRoi, filterByPeriod } from "@/lib/supabase";
 import { useDash } from "./DashContext";
+import PeriodTabs from "./PeriodTabs";
 
 const STATUS_LABEL: Record<Ticket["status"], string> = {
   sold: "Sold",
@@ -17,14 +19,18 @@ function seatLine(t: Ticket): string {
 }
 
 export default function EventsPage() {
-  const { tickets, loading, error, save, remove, setStatus, togglePaid, openEdit, openSell, copyRow } = useDash();
+  const { tickets, loading, error, period, remove, setStatus, togglePaid, openEdit, openSell, copyRow } = useDash();
 
-  const priced = tickets.filter((t) => t.qty_sold > 0 && t.buy_price > 0);
+  // The period filter drives the whole page — table rows AND the summary — so a
+  // "last month" view never shows a table for one window and totals for another.
+  const shown = useMemo(() => filterByPeriod(tickets, period), [tickets, period]);
+
+  const priced = shown.filter((t) => t.qty_sold > 0 && t.buy_price > 0);
   const totalProfit = priced.reduce((s, t) => s + realizedProfit(t), 0);
-  const soldRows = tickets.filter((t) => t.qty_sold > 0).length;
-  const totalListed = tickets.filter((t) => t.status === "listed").length;
+  const soldRows = shown.filter((t) => t.qty_sold > 0).length;
+  const totalListed = shown.filter((t) => t.status === "listed").length;
   // Sold rows whose payout hasn't landed yet — the number still owed to you.
-  const awaitingPayout = tickets
+  const awaitingPayout = shown
     .filter((t) => t.qty_sold > 0 && !t.paid_out)
     .reduce((s, t) => s + t.sell_price, 0);
 
@@ -32,6 +38,7 @@ export default function EventsPage() {
     <>
       <div className="toolbar">
         <h1>All Events</h1>
+        <PeriodTabs />
         <div className="summary">
           <div className="stat"><div className="label">Sold</div><div className="value">{soldRows}</div></div>
           <div className="stat"><div className="label">Listed</div><div className="value">{totalListed}</div></div>
@@ -65,6 +72,8 @@ export default function EventsPage() {
         <div className="empty">Loading…</div>
       ) : error ? null : tickets.length === 0 ? (
         <div className="empty">No events yet. Add a purchase, or wait for a sale email to land.</div>
+      ) : shown.length === 0 ? (
+        <div className="empty">No events in this period. Try a longer range.</div>
       ) : (
         <div className="table-wrap">
           <table className="table">
@@ -76,7 +85,7 @@ export default function EventsPage() {
               </tr>
             </thead>
             <tbody>
-              {tickets.map((t) => {
+              {shown.map((t) => {
                 const profit = realizedProfit(t);
                 const pct = realizedRoi(t);
                 const cls = profit >= 0 ? "profit-pos" : "profit-neg";

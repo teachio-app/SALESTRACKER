@@ -87,8 +87,9 @@ body {
 .toolbar h1 { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
 .summary { display: flex; gap: 22px; margin-left: auto; }
 
-/* Period selector on the charts page */
-.period-tabs { display: flex; gap: 4px; margin-left: auto; }
+/* Period selector — sits next to the page title; the summary (if any) keeps its
+   own margin-left:auto and stays right. */
+.period-tabs { display: flex; gap: 4px; }
 .period-tab {
   background: var(--panel); border: 1px solid var(--border-strong);
   color: var(--text-2); border-radius: var(--radius);

@@ -104,3 +104,28 @@ export function realizedRoi(t: ProfitInput): number {
   const cost = realizedCost(t);
   return cost > 0 ? (realizedProfit(t) / cost) * 100 : 0;
 }
+
+// ── Period filter (shared by the Events table and the Charts page) ────
+export const PERIODS = [
+  { key: "1m", label: "1M", months: 1 },
+  { key: "3m", label: "3M", months: 3 },
+  { key: "6m", label: "6M", months: 6 },
+  { key: "1y", label: "1Y", months: 12 },
+  { key: "all", label: "All", months: null as number | null },
+] as const;
+
+/** The date a row is placed on the timeline: when it sold, else the event, else creation. */
+function periodDate(t: Pick<Ticket, "sold_at" | "event_date" | "created_at">): Date {
+  return new Date(t.sold_at ?? t.event_date ?? t.created_at);
+}
+
+export function filterByPeriod<T extends Pick<Ticket, "sold_at" | "event_date" | "created_at">>(
+  rows: T[],
+  periodKey: string
+): T[] {
+  const p = PERIODS.find((x) => x.key === periodKey);
+  if (!p?.months) return rows;
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - p.months);
+  return rows.filter((t) => periodDate(t) >= cutoff);
+}

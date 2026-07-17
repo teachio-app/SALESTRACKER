@@ -15,6 +15,8 @@ export type DashCtx = {
   remove: (id: string) => Promise<void>;
   setStatus: (t: Ticket, status: Ticket["status"]) => Promise<void>;
   togglePaid: (t: Ticket) => Promise<void>;
+  period: string;
+  setPeriod: (p: string) => void;
   openAdd: () => void;
   openEdit: (t: Partial<Ticket>) => void;
   openSell: (t: Ticket) => void;

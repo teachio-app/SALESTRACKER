@@ -17,6 +17,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Partial<Ticket> | null>(null);
   const [selling, setSelling] = useState<Ticket | null>(null);
+  // Shared across Events + Charts so the chosen window carries between pages.
+  const [period, setPeriod] = useState("all");
 
   async function load() {
     setLoading(true);
@@ -68,6 +70,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     remove,
     setStatus: (t, status) => save({ id: t.id, status }),
     togglePaid: (t) => save({ id: t.id, paid_out: !t.paid_out }),
+    period,
+    setPeriod,
     openAdd: () => setEditing({ ...EMPTY_PURCHASE }),
     openEdit: (t) => setEditing({ ...t }),
     openSell: (t) => setSelling(t),
