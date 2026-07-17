@@ -15,7 +15,9 @@ import { AUTH_COOKIE, authToken, safeEqual } from "@/lib/auth";
 // ─────────────────────────────────────────────────────────────
 
 export const config = {
-  matcher: ["/((?!api/cron|_next|favicon.ico).*)"],
+  // Also skip the app icon so the browser-tab favicon loads without a session
+  // (otherwise /icon.svg redirects to /login and the tab shows no icon).
+  matcher: ["/((?!api/cron|_next|favicon.ico|icon.svg).*)"],
 };
 
 export async function middleware(req: NextRequest) {
