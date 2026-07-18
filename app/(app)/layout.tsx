@@ -54,11 +54,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     if (t.id) setTickets((prev) => prev.map((x) => (x.id === t.id ? { ...x, ...t } : x)));
     setEditing(null);
     setSelling(null);
-    await fetch("/api/tickets", {
+    const res = await fetch("/api/tickets", {
       method,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(t),
     });
+    // Surface a failed save instead of silently reverting on the next reload.
+    if (!res.ok) {
+      const b = await res.json().catch(() => ({}));
+      setError(`Save failed: ${b.error ?? res.status}`);
+    }
     load(true);
   }
 
