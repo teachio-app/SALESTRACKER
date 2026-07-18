@@ -30,7 +30,8 @@ export default function ReviewPage() {
         <>
           <div className="chart-notice" style={{ marginBottom: 12 }}>
             These sales came in from email but couldn’t be matched to a purchase by seat.
-            Use <strong>Link</strong> to merge one into the right purchase, or edit / delete it.
+            Use <strong>Link</strong> to merge one into the right purchase, or <strong>No purchase</strong>
+            {" "}to keep it as a standalone sale — either way it leaves this queue.
           </div>
           <TicketsTable rows={rows} showLink />
         </>

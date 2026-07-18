@@ -32,7 +32,7 @@ function value(t: Ticket, key: SortKey): number | string {
 }
 
 export default function TicketsTable({ rows, showLink = false }: { rows: Ticket[]; showLink?: boolean }) {
-  const { remove, setStatus, togglePaid, openEdit, openSell, copyRow, openLink } = useDash();
+  const { remove, setStatus, togglePaid, openEdit, openSell, copyRow, openLink, save } = useDash();
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "date", dir: 1 });
 
   const sorted = useMemo(() => {
@@ -135,8 +135,12 @@ export default function TicketsTable({ rows, showLink = false }: { rows: Ticket[
                 <td>
                   <div className="actions">
                     {showLink && t.needs_review && (
-                      <button className="btn btn-sm btn-primary" onClick={() => openLink(t)}
-                              title="Merge this sale into an existing purchase">Link</button>
+                      <>
+                        <button className="btn btn-sm btn-primary" onClick={() => openLink(t)}
+                                title="Merge this sale into an existing purchase">Link</button>
+                        <button className="btn btn-sm btn-ghost" onClick={() => save({ id: t.id, needs_review: false })}
+                                title="No purchase to link — keep it as a standalone sale">No purchase</button>
+                      </>
                     )}
                     <button className="btn btn-sm btn-primary" onClick={() => openSell(t)}>Sell</button>
                     <button className="btn btn-sm btn-ghost" onClick={() => openEdit(t)}>Edit</button>
