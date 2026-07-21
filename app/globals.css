@@ -67,7 +67,7 @@ body {
 .logo-mark { flex-shrink: 0; width: 22px; height: 22px; line-height: 0; }
 .logo-mark svg { width: 22px; height: 22px; display: block; }
 .nav-btn {
-  display: block; width: 100%; text-align: left;
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
   padding: 8px 10px; border-radius: var(--radius); border: none;
   color: var(--text-2); background: transparent; cursor: pointer;
   font: inherit; font-size: 13.5px;
@@ -119,8 +119,10 @@ body {
 /* ── Charts dashboard ── */
 .dash { display: flex; flex-direction: column; gap: 12px; margin-bottom: 18px; }
 
-.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-@media (max-width: 760px) { .kpis { grid-template-columns: repeat(2, 1fr); } }
+/* minmax(0,1fr), not 1fr: a bare 1fr track won't shrink below its content's
+   min-content, so long figures pushed the KPI tiles past the screen edge. */
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 760px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* Two charts side by side (stacks to one column when narrow). */
 .dash-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 12px; }
@@ -162,7 +164,7 @@ body {
 
 /* Nav badge (review count) */
 .nav-badge {
-  float: right;
+  margin-left: auto;
   background: var(--accent); color: #fff;
   font-size: 10.5px; font-weight: 600;
   min-width: 17px; height: 17px; line-height: 17px;
@@ -388,3 +390,53 @@ select { cursor: pointer; }
   margin-bottom: 16px;
 }
 .error-banner strong { color: var(--text); }
+
+/* ── Mobile ──────────────────────────────────────────────────────────
+   Desktop-first app; on phones the fixed sidebar + wide toolbar broke the
+   layout. Stack the sidebar as a top bar, let the toolbars wrap, and keep the
+   wide table scrolling inside its own wrapper instead of the whole page. */
+@media (max-width: 720px) {
+  /* Belt-and-braces: the page itself never scrolls sideways. The wide table
+     has its own scroll container (.table-wrap), which this does not touch. */
+  body { overflow-x: hidden; }
+  .app { flex-direction: column; }
+
+  .sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding: 10px 12px 12px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  }
+  .logo { flex: 1 1 100%; margin: 0 0 8px; font-size: 14px; }
+  .nav-btn { width: auto; margin-bottom: 0; padding: 7px 12px; }
+  .nav-btn.nav-add { margin-top: 0; }
+  .nav-badge { margin-left: 6px; }
+  .nav-section { display: none; }
+
+  .main { padding: 14px 12px; }
+
+  .toolbar { flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+  .toolbar h1 { flex: 1 1 100%; }
+  .summary { margin-left: 0; width: 100%; gap: 12px 20px; flex-wrap: wrap; }
+  .summary .stat { text-align: left; }
+  .period-tabs { flex-wrap: wrap; }
+
+  .table-toolbar { flex-wrap: wrap; }
+  .search { max-width: none; flex: 1 1 100%; }
+
+  /* Charts: one column (the minmax(360px) grid overflowed a phone), smaller
+     figures, and cards that can shrink instead of forcing the page wide. */
+  .kpis { gap: 8px; }
+  .kpi { padding: 12px; min-width: 0; }
+  .kpi-value, .chart-hero { font-size: 18px; }
+  .dash-charts { grid-template-columns: minmax(0, 1fr); }
+  .chart-card { min-width: 0; }
+
+  /* Modals: give them the screen, and stack the fills row so 3 inputs fit. */
+  .modal-overlay { padding: 8px; }
+  .modal { max-height: 94vh; }
+  .fill-row { flex-wrap: wrap; gap: 8px; }
+  .fill-cell, .fill-cell:first-child { flex: 1 1 100%; }
+  .modal-link { width: 100%; }
+}
