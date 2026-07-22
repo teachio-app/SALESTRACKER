@@ -1,6 +1,14 @@
 import { ParsedSale } from "./parsers";
 import type { ViagogoPayment } from "./parsers/viagogoPayment";
 
+// A ping only fires if the message CONTENT holds `<@id>` (embeds never ping),
+// and Discord needs the numeric user ID — a username can't be mentioned. Set
+// DISCORD_MENTION_USER_ID to your ID and every alert tags you.
+function mention(): { content?: string; allowed_mentions?: object } {
+  const id = process.env.DISCORD_MENTION_USER_ID;
+  return id ? { content: `<@${id}>`, allowed_mentions: { parse: [], users: [id] } } : {};
+}
+
 async function post(url: string, body: unknown): Promise<void> {
   try {
     await fetch(url, {
@@ -43,7 +51,7 @@ export async function notifyDiscord(sale: ParsedSale): Promise<void> {
     timestamp: new Date().toISOString(),
   };
 
-  await post(url, { embeds: [embed] });
+  await post(url, { ...mention(), embeds: [embed] });
 }
 
 // Payout notification — a separate webhook (DISCORD_PAYMENT_WEBHOOK_URL) so
@@ -69,5 +77,5 @@ export async function notifyPayment(payment: ViagogoPayment): Promise<void> {
     timestamp: new Date().toISOString(),
   };
 
-  await post(url, { embeds: [embed] });
+  await post(url, { ...mention(), embeds: [embed] });
 }
