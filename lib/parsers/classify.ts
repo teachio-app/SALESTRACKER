@@ -64,8 +64,10 @@ const RULES: Rule[] = [
   {
     kind: "sale",
     test: (e, b) =>
-      // Viagogo fingerprint
+      // Viagogo — old format
       (has(b, /you sold\b/i) && has(b, /payout details|payout option|sale\s*#\s*\d{6,}/i)) ||
+      // Viagogo — new format (2026): "Sale Info" block + "Payment Total" + OrderID
+      (has(b, /sale info/i) && has(b, /payment\s+total/i) && has(b, /orderid\s*#?\s*\d{6,}/i)) ||
       // Seatix/Gigsberg fingerprint
       (has(b, /sale confirmation/i) && has(b, /financial summary|total face value/i)),
   },

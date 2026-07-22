@@ -89,6 +89,30 @@ Ticket qty	2
 €480.00
 Questions about your payout? Learn more`;
 
+// Viagogo's NEW sale format (2026-07) — real email, "Sale Info" block layout.
+export const VIAGOGO_SALE_V2_SUBJECT = "You sold your ticket for Bad Bunny - Order# 649272626";
+export const VIAGOGO_SALE_V2 = `viagogo
+Hello Petr,
+Congratulations, you've sold your tickets!
+
+You're all set as long as all your tickets have been sent to
+petulka.pech-13424297724@ticketpreupload.com already.
+
+Payment Info
+Subtotal   €219.75
+Service fee - €0.00
+Payment Total   €219.75
+Payment option:
+We'll send your payment directly to:
+IBAN (Envoy - Euro): **************89
+
+Sale Info Bad Bunny
+Wednesday, July 22, 2026 | 19:00 King Baudouin Stadium, Brussels, BE OrderID # 649272626
+1 Ticket(s)
+Section: 3 A Row 21 | Seat(s) 19 - 19
+
+Copyright © 2026 viagogo. All rights reserved`;
+
 // A viagogo payout email — money actually paid, covering several orders.
 export const VIAGOGO_PAYMENT_SUBJECT = "viagogo payment 66726239 - You have just been paid";
 export const VIAGOGO_PAYMENT = `Hello Petr,

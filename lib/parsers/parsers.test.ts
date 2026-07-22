@@ -7,6 +7,7 @@ import { classify } from "./classify";
 import { parseViagogoPayment, isViagogoPayment } from "./viagogoPayment";
 import {
   SEATIX_SALE, VIAGOGO_SALE, VIAGOGO_CONCERT,
+  VIAGOGO_SALE_V2, VIAGOGO_SALE_V2_SUBJECT,
   VIAGOGO_PAYMENT, VIAGOGO_PAYMENT_SUBJECT, asEmail,
 } from "./__fixtures__/real-emails";
 
@@ -59,6 +60,21 @@ check("location", c?.location, "O2 Arena, London");
 check("eventDate", c?.eventDate, "2026-08-21");
 check("qty", c?.qty, 2);
 check("sellPrice", c?.sellPrice, 480);
+
+console.log("\nparseViagogo() — NEW 2026 format (Sale Info block)");
+const v2email = asEmail(VIAGOGO_SALE_V2, VIAGOGO_SALE_V2_SUBJECT);
+check("classifies as sale", classify(v2email), "sale");
+const v2 = parseViagogo(v2email);
+check("recognised", v2 !== null, true);
+check("orderRef", v2?.orderRef, "649272626");
+check("eventName", v2?.eventName, "Bad Bunny");
+check("eventDate", v2?.eventDate, "2026-07-22");
+check("location", v2?.location, "King Baudouin Stadium, Brussels, BE");
+check("section", v2?.section, "3 A");
+check("seatRow", v2?.seatRow, "21");
+check("seats", v2?.seats, "19 - 19");
+check("qty", v2?.qty, 1);
+check("sellPrice", v2?.sellPrice, 219.75);
 
 console.log("\nparseViagogoPayment()");
 const payEmail = asEmail(VIAGOGO_PAYMENT, VIAGOGO_PAYMENT_SUBJECT);
