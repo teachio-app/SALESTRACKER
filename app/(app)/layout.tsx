@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { saleTotals, type Ticket } from "@/lib/supabase";
 import PurchaseModal, { EMPTY_PURCHASE } from "@/app/PurchaseModal";
 import SellModal from "@/app/SellModal";
@@ -26,6 +26,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // state swaps the whole table for a "Loading…" line, which collapses the page
   // and throws the scroll back to the top. Only the FIRST load shows it; every
   // refetch after an edit is silent, so the list stays put where you are.
+  // Signature of the last data we rendered (row count + newest updated_at). A
+  // background poll only re-renders when this changes, so an idle tab isn't
+  // churning the table every few seconds.
+  const sigRef = useRef("");
+
   async function load(silent = false) {
     if (!silent) setLoading(true);
     try {
@@ -34,7 +39,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       if (!res.ok || !Array.isArray(body)) {
         throw new Error(body?.error ?? `Request failed (${res.status})`);
       }
-      setTickets(body);
+      const sig = body.length + "|" + body.reduce((m: string, t: Ticket) => (t.updated_at > m ? t.updated_at : m), "");
+      if (sig !== sigRef.current) {
+        sigRef.current = sig;
+        setTickets(body);
+      }
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -43,7 +52,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       if (!silent) setLoading(false);
     }
   }
-  useEffect(() => { load(); }, []);
+
+  // Live-ish: poll every 15s so a sale the mail poller just added appears without
+  // a manual refresh. Only while the tab is visible (no work in a backgrounded
+  // tab), and refetch the moment you switch back so it's fresh instantly.
+  useEffect(() => {
+    load();
+    const POLL_MS = 15000;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const start = () => { timer ??= setInterval(() => load(true), POLL_MS); };
+    const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") { load(true); start(); } else stop();
+    };
+    if (document.visibilityState === "visible") start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => { stop(); document.removeEventListener("visibilitychange", onVisibility); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function save(t: Partial<Ticket>) {
     const method = t.id ? "PATCH" : "POST";
