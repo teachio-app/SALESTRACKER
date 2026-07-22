@@ -56,7 +56,7 @@ export async function notifyDiscord(sale: ParsedSale): Promise<void> {
 
 // Payout notification — a separate webhook (DISCORD_PAYMENT_WEBHOOK_URL) so
 // "money landed" pings can go to their own channel, apart from sale alerts.
-export async function notifyPayment(payment: ViagogoPayment): Promise<void> {
+export async function notifyPayment(payment: ViagogoPayment, markedPaid = 0): Promise<void> {
   const url = process.env.DISCORD_PAYMENT_WEBHOOK_URL;
   if (!url) return;
 
@@ -72,6 +72,9 @@ export async function notifyPayment(payment: ViagogoPayment): Promise<void> {
       { name: "Reference", value: payment.reference, inline: true },
       ...(payment.paidOn ? [{ name: "Processed", value: payment.paidOn, inline: true }] : []),
       { name: "Orders", value: String(payment.items.length), inline: true },
+      ...(markedPaid > 0
+        ? [{ name: "Auto-marked paid", value: `${markedPaid} sale${markedPaid === 1 ? "" : "s"} ✓`, inline: true }]
+        : []),
     ],
     footer: { text: "viagogo · may take up to 8 business days to hit the bank" },
     timestamp: new Date().toISOString(),

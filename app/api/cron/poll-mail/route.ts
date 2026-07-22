@@ -62,10 +62,27 @@ export async function GET(req: Request) {
   let failed = false;
 
   for (const email of emails) {
-    // Viagogo payout email → notify only, no ticket row.
+    // Viagogo payout email → no ticket row, but tick "Paid" on the sales it
+    // covers (match by viagogo Order ID = the row's order_ref) and notify.
     if (isViagogoPayment(email)) {
       const payment = parseViagogoPayment(email);
-      if (payment) { await notifyPayment(payment); stats.paid++; } else stats.skipped++;
+      if (payment) {
+        const orderIds = payment.items.map((i) => i.orderId).filter(Boolean);
+        let markedPaid = 0;
+        if (orderIds.length) {
+          const { data } = await db
+            .from("tickets")
+            .update({ paid_out: true })
+            .in("order_ref", orderIds)
+            .eq("paid_out", false) // only flip the ones still unpaid, for an honest count
+            .select("id");
+          markedPaid = data?.length ?? 0;
+        }
+        await notifyPayment(payment, markedPaid);
+        stats.paid++;
+      } else {
+        stats.skipped++;
+      }
       continue;
     }
 
