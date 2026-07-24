@@ -68,8 +68,9 @@ const RULES: Rule[] = [
       (has(b, /you sold\b/i) && has(b, /payout details|payout option|sale\s*#\s*\d{6,}/i)) ||
       // Viagogo — new format (2026): "Sale Info" block + "Payment Total" + OrderID
       (has(b, /sale info/i) && has(b, /payment\s+total/i) && has(b, /orderid\s*#?\s*\d{6,}/i)) ||
-      // Viagogo — "Please send your tickets" confirmation: Total Proceeds + Order ID
-      (has(b, /total proceeds/i) && has(b, /order id\s*:\s*\d{6,}/i) &&
+      // Viagogo — "Please send your tickets" confirmation: Total Proceeds + Order ID.
+      // \s+ (not a literal space) so the hard-wrapped "Total\nProceeds" still matches.
+      (has(b, /total\s+proceeds/i) && has(b, /order\s+id\s*:\s*\d{6,}/i) &&
         (has(b, /confirming your sale/i) || has(b, /send your tickets/i))) ||
       // Seatix/Gigsberg fingerprint
       (has(b, /sale confirmation/i) && has(b, /financial summary|total face value/i)),

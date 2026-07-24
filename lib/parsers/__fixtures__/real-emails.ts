@@ -116,29 +116,21 @@ Copyright © 2026 viagogo. All rights reserved`;
 // Viagogo "Please send your tickets" — a transfer reminder that carries the
 // full sale (real email, 2026-07).
 export const VIAGOGO_SALE_V3_SUBJECT = "Please send your tickets 649481835";
-export const VIAGOGO_SALE_V3 = `viagogo
-Petr:
-Thank you for confirming your sale of The Weeknd tickets.
-
+// Hard-wrapped exactly like the real plain-text part — labels split across line
+// breaks ("Total\nProceeds", "Section\n326", "San Siro Date:"). This is the shape
+// that broke the first attempt, so keep it wrapped.
+export const VIAGOGO_SALE_V3 = `Petr: Thank you for confirming your sale of The Weeknd tickets.
 We expect you to transfer your tickets via Mobile Transfer as soon as possible.
-Failure to transfer tickets by Saturday, 25 July 2026 15:15 may result in cancellation.
-
-Order Information
-Order ID: 649481835
-Delivery Method:	Mobile Ticket Transfer
-Ticket(s):	Section 326, Row 11, (2 Ticket(s))
-Event:	The Weeknd
-Listing Note(s):	Under 16s accompanied by an adult, Limited or Obstructed View
-Venue:	San Siro
-Date:	Saturday, July 25, 2026 | 19:15
-Must Ship by Date:	Saturday, July 25, 2026 | 13:15 UTC
-
-Total Proceeds
-Number of Tickets:	2
-Price per Ticket:	€61.53
-Shipping Refund:	€0.00
-Total Proceeds:	€123.06
-
+Failure to transfer tickets by Saturday, 25 July 2026 15:15 (W. Europe Standard
+Time) may result in cancellation. Order
+Order ID: 649481835 Delivery Method: Mobile Ticket Transfer Ticket(s): Section
+326, Row 11, (2 Ticket(s)) Event: The Weeknd Listing Note(s): Under 16s
+accompanied by an adult, Limited or Obstructed View (printed on ticket) Venue:
+San Siro Date: Saturday, July 25, 2026 | 19:15 Must Ship by Date: Saturday, July
+25, 2026 | 13:15 UTC
+Ticket Holder # 1 Full Name: Ines Ali Date of Birth: 1997-09-20
+Number of Tickets: 2 Price per Ticket: €61.53 Shipping Refund: €0.00 Total
+Proceeds: €123.06
 Copyright © 2026 viagogo. All rights reserved`;
 
 // A viagogo payout email — money actually paid, covering several orders.

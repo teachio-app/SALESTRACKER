@@ -156,13 +156,17 @@ function parseViagogoV2(email: RawEmail, body: string): ParsedSale | null {
 //   Total Proceeds: €123.06
 // Same order id as any "You sold" mail for the sale, so external_id dedupes if
 // both arrive — safe to parse.
-function parseViagogoV3(email: RawEmail, body: string): ParsedSale | null {
+function parseViagogoV3(email: RawEmail, rawBody: string): ParsedSale | null {
+  // The real email is hard-wrapped — labels and values flow across line breaks
+  // ("Total\nProceeds: €…", "San Siro Date: …"). Collapse to one line so the
+  // labels are contiguous; event name / venue then stop at the NEXT label.
+  const body = rawBody.replace(/\s+/g, " ");
   const orderRef =
     first(body, /Order ID\s*:\s*(\d{6,})/i) || first(email.subject, /(\d{6,})/);
-  const eventName = first(body, /\bEvent\s*:\s*(.+)/i);
-  const venue = first(body, /\bVenue\s*:\s*(.+)/i);
-  // Anchor "Date:" to a line start so "Must Ship by Date:" can't win.
-  const rawDate = first(body, /(?:^|\n)\s*Date\s*:\s*((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,\s+\w+\s+\d{1,2},\s+\d{4})/i);
+  const eventName = first(body, /\bEvent\s*:\s*(.+?)\s+(?:Listing Note|Venue|Date|Must Ship)\b/i);
+  const venue = first(body, /\bVenue\s*:\s*(.+?)\s+(?:Date|Must Ship)\b/i);
+  // The event "Date:" comes before "Must Ship by Date:", so the first match wins.
+  const rawDate = first(body, /\bDate\s*:\s*((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,\s+\w+\s+\d{1,2},\s+\d{4})/i);
   const section = first(body, /Section\s+([A-Za-z0-9]+)\s*,\s*Row/i);
   const row = first(body, /\bRow\s+([A-Za-z0-9]+)/i);
   const qtyStr = first(body, /Number of Tickets\s*:\s*(\d+)/i) || first(body, /\((\d+)\s*Ticket/i);
@@ -195,7 +199,8 @@ export const parseViagogo: Parser = (email: RawEmail): ParsedSale | null => {
     if (v2) return v2;
   }
   // "Please send your tickets" transfer confirmation (also a full sale).
-  if (/Total Proceeds/i.test(body) && /Order ID\s*:/i.test(body)) {
+  // \s+ so wrapped "Total\nProceeds" / "Order\nID" still trigger the branch.
+  if (/Total\s+Proceeds/i.test(body) && /Order\s+ID\s*:/i.test(body)) {
     const v3 = parseViagogoV3(email, body);
     if (v3) return v3;
   }
