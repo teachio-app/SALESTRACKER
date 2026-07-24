@@ -145,13 +145,59 @@ function parseViagogoV2(email: RawEmail, body: string): ParsedSale | null {
   };
 }
 
+// ── "Please send your tickets" transfer confirmation (2026-07) ────────
+// A THIRD layout: framed as a "transfer your tickets" reminder, but it carries
+// the full sale — labelled fields and "Total Proceeds":
+//   Order ID: 649481835
+//   Ticket(s): Section 326, Row 11, (2 Ticket(s))
+//   Event: The Weeknd
+//   Venue: San Siro
+//   Date: Saturday, July 25, 2026 | 19:15
+//   Total Proceeds: €123.06
+// Same order id as any "You sold" mail for the sale, so external_id dedupes if
+// both arrive — safe to parse.
+function parseViagogoV3(email: RawEmail, body: string): ParsedSale | null {
+  const orderRef =
+    first(body, /Order ID\s*:\s*(\d{6,})/i) || first(email.subject, /(\d{6,})/);
+  const eventName = first(body, /\bEvent\s*:\s*(.+)/i);
+  const venue = first(body, /\bVenue\s*:\s*(.+)/i);
+  // Anchor "Date:" to a line start so "Must Ship by Date:" can't win.
+  const rawDate = first(body, /(?:^|\n)\s*Date\s*:\s*((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,\s+\w+\s+\d{1,2},\s+\d{4})/i);
+  const section = first(body, /Section\s+([A-Za-z0-9]+)\s*,\s*Row/i);
+  const row = first(body, /\bRow\s+([A-Za-z0-9]+)/i);
+  const qtyStr = first(body, /Number of Tickets\s*:\s*(\d+)/i) || first(body, /\((\d+)\s*Ticket/i);
+  const payout = parseEuro(first(body, /Total Proceeds\s*:\s*€\s*([\d.,]+)/i));
+
+  if (!orderRef || !eventName || payout == null) return null;
+
+  return {
+    source: "viagogo",
+    externalId: `viagogo:${orderRef}`,
+    orderRef,
+    eventName,
+    eventDate: parseViagogoDate(rawDate),
+    location: venue,
+    section,
+    seatRow: row,
+    seats: null, // this layout gives section + row only, no seat numbers
+    qty: qtyStr ? parseInt(qtyStr, 10) : 1,
+    sellPrice: payout,
+    currency: "EUR",
+  };
+}
+
 export const parseViagogo: Parser = (email: RawEmail): ParsedSale | null => {
   const body = email.text || email.html || "";
 
-  // Try the new format first — detected by its "Sale Info" + "Payment Total" pair.
+  // New "Sale Info / Payment Total" format.
   if (/Sale Info/i.test(body) && /Payment\s+Total/i.test(body)) {
     const v2 = parseViagogoV2(email, body);
     if (v2) return v2;
+  }
+  // "Please send your tickets" transfer confirmation (also a full sale).
+  if (/Total Proceeds/i.test(body) && /Order ID\s*:/i.test(body)) {
+    const v3 = parseViagogoV3(email, body);
+    if (v3) return v3;
   }
 
   if (!isViagogo(body)) return null;

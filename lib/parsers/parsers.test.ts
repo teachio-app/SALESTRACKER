@@ -8,6 +8,7 @@ import { parseViagogoPayment, isViagogoPayment } from "./viagogoPayment";
 import {
   SEATIX_SALE, VIAGOGO_SALE, VIAGOGO_CONCERT,
   VIAGOGO_SALE_V2, VIAGOGO_SALE_V2_SUBJECT,
+  VIAGOGO_SALE_V3, VIAGOGO_SALE_V3_SUBJECT,
   VIAGOGO_PAYMENT, VIAGOGO_PAYMENT_SUBJECT, asEmail,
 } from "./__fixtures__/real-emails";
 
@@ -75,6 +76,20 @@ check("seatRow", v2?.seatRow, "21");
 check("seats", v2?.seats, "19 - 19");
 check("qty", v2?.qty, 1);
 check("sellPrice", v2?.sellPrice, 219.75);
+
+console.log("\nparseViagogo() — 'Please send your tickets' format");
+const v3email = asEmail(VIAGOGO_SALE_V3, VIAGOGO_SALE_V3_SUBJECT);
+check("classifies as sale", classify(v3email), "sale");
+const v3 = parseViagogo(v3email);
+check("recognised", v3 !== null, true);
+check("orderRef", v3?.orderRef, "649481835");
+check("eventName", v3?.eventName, "The Weeknd");
+check("eventDate (not the ship-by date)", v3?.eventDate, "2026-07-25");
+check("location", v3?.location, "San Siro");
+check("section", v3?.section, "326");
+check("seatRow", v3?.seatRow, "11");
+check("qty", v3?.qty, 2);
+check("sellPrice (Total Proceeds)", v3?.sellPrice, 123.06);
 
 console.log("\nparseViagogoPayment()");
 const payEmail = asEmail(VIAGOGO_PAYMENT, VIAGOGO_PAYMENT_SUBJECT);
