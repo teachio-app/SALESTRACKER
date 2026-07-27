@@ -180,6 +180,10 @@ body {
 .th-sort { cursor: pointer; user-select: none; white-space: nowrap; }
 .th-sort:hover { color: var(--text-2); }
 
+/* Keep the date on one line — "2026-07-25" was wrapping to two rows when the
+   column got squeezed. */
+.date-cell { white-space: nowrap; }
+
 /* ── Table ── */
 .table-wrap {
   background: var(--panel);

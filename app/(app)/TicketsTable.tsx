@@ -89,7 +89,7 @@ export default function TicketsTable({ rows, showLink = false }: { rows: Ticket[
                   </div>
                   {t.order_ref && <div className="order-ref">#{t.order_ref}</div>}
                 </td>
-                <td className="nums">{t.event_date ?? "—"}</td>
+                <td className="nums date-cell">{t.event_date ?? "—"}</td>
                 <td className="venue-cell">
                   {t.location}
                   {seat && <><br /><span className="seat">{seat}</span></>}
