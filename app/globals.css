@@ -5,13 +5,14 @@
   --bg: #0d0d0d;
   --panel: #161616;
   --panel-2: #1c1c1c;
-  --row-hover: #1e1e1e;
-  --border: #262626;
-  --border-strong: #333333;
+  --row-alt: #1c1c1c;      /* even table rows — subtle zebra so rows don't blur */
+  --row-hover: #292929;    /* clearly brighter than the zebra shade */
+  --border: #2e2e2e;       /* a touch stronger so cell edges read */
+  --border-strong: #3b3b3b;
 
-  --text: #ededed;
-  --text-2: #a1a1a1;
-  --text-3: #6f6f6f;
+  --text: #f2f2f2;
+  --text-2: #b4b4b4;
+  --text-3: #808080;
 
   /* One accent, used only for actions and the chart's positive series. */
   --accent: #3987e5;
@@ -202,6 +203,9 @@ body {
   padding: 10px; border-bottom: 1px solid var(--border); vertical-align: middle;
 }
 .table tbody tr:last-child td { border-bottom: none; }
+/* Zebra: alternate rows get a lighter panel so the eye can track a single row
+   across the wide table without drifting. Hover still wins over both shades. */
+.table tbody tr:nth-child(even) { background: var(--row-alt); }
 .table tbody tr:hover { background: var(--row-hover); }
 .event-name { font-weight: 500; }
 .order-ref { color: var(--text-3); font-size: 11.5px; }
