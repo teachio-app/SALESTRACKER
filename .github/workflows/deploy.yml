@@ -1,0 +1,65 @@
+# Auto-deploy to Vercel on every push to main.
+#
+# Why this exists instead of Vercel's native Git integration: this repo's Git
+# connection is bound to a DIFFERENT Vercel project (`salestracker` on the
+# `salestracker1` team), and `vercel git connect` can't rebind it to the project
+# we actually use (`ticket-tracker` on `teachio-app`) because of a GitHub
+# identity/permission mismatch. A token-based Action sidesteps all of that: it
+# deploys straight to the right project, no GitHub App authorization needed.
+#
+# One-time setup (done by the repo owner):
+#   1. Vercel → Account Settings → Tokens → create a token scoped to the
+#      `teachio-app` team, copy it.
+#   2. GitHub → this repo → Settings → Secrets and variables → Actions →
+#      New repository secret → name: VERCEL_TOKEN, value: <the token>.
+# The org/project IDs below are not secret (they only identify the project; they
+# do nothing without the token), so they're inlined.
+
+name: Deploy to Vercel (production)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {} # lets you trigger a deploy by hand from the Actions tab
+
+# Never let two deploys race; a newer push cancels an in-flight one.
+concurrency:
+  group: vercel-production
+  cancel-in-progress: true
+
+env:
+  VERCEL_ORG_ID: team_ZSe51GkqmxtXw0bbfZ2E70yy
+  VERCEL_PROJECT_ID: prj_KNec1bxzYYUR8AhMKb0Az0xdyiwq
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Skip cleanly (green, not a red X) until the VERCEL_TOKEN secret exists,
+      # so the very first run before setup doesn't look like a failure.
+      - name: Check for token
+        id: check
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "::warning::VERCEL_TOKEN secret not set — skipping deploy. Add it in repo Settings → Secrets → Actions."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      - name: Install Vercel CLI
+        if: steps.check.outputs.ready == 'true'
+        run: npm install -g vercel@latest
+
+      # Remote build on Vercel using the project's configured env vars, then
+      # promote to production. Fails the job (red X in Actions) if the build
+      # breaks, so a bad push can't silently ship.
+      - name: Deploy to production
+        if: steps.check.outputs.ready == 'true'
+        run: vercel deploy --prod --yes --token="$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
