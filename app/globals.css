@@ -498,4 +498,50 @@ select { cursor: pointer; }
   .fill-row { flex-wrap: wrap; gap: 8px; }
   .fill-cell, .fill-cell:first-child { flex: 1 1 100%; }
   .modal-link { width: 100%; }
+
+  .scan-grid { grid-template-columns: 1fr; }
+  .scan-status { flex-wrap: wrap; gap: 14px; }
+  .scan-subj, .scan-matched { max-width: 180px; }
 }
+
+/* ── Scanner ── */
+.scan-grid {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.scan-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+}
+.scan-label {
+  display: block;
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-3); margin: 12px 0 5px;
+}
+.scan-panel > .scan-label:first-child { margin-top: 0; }
+.scan-two { display: flex; gap: 10px; }
+.scan-two > div { flex: 1; }
+.scan-folders { margin-top: 14px; }
+.scan-folders-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.scan-folder-list {
+  max-height: 200px; overflow: auto;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 6px; background: var(--bg); margin-bottom: 6px;
+}
+.scan-folder { display: flex; align-items: center; gap: 8px; padding: 3px 2px; font-size: 13px; }
+.scan-folder.off { color: var(--text-3); }
+.scan-folder input { width: auto; }
+.scan-folder .scan-tag { margin-left: auto; font-size: 10.5px; color: var(--text-3); }
+.scan-actions { display: flex; gap: 8px; margin-top: 16px; }
+.scan-results { min-width: 0; }
+.scan-status { display: flex; align-items: center; gap: 22px; margin-bottom: 12px; }
+.scan-status .stat .label { color: var(--text-3); font-size: 11px; }
+.scan-status .stat .value { font-weight: 600; font-size: 18px; }
+.scan-progress { color: var(--text-2); font-size: 12.5px; }
+.scan-subj, .scan-matched { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scan-matched { color: var(--text-3); font-size: 12px; }
+.hint { font-size: 11.5px; color: var(--text-3); margin-top: 4px; }

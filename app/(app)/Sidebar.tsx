@@ -16,6 +16,7 @@ export default function Sidebar() {
     { href: "/", label: "Events", badge: 0 },
     { href: "/charts", label: "Charts", badge: 0 },
     { href: "/review", label: "Review", badge: reviewCount },
+    { href: "/scanner", label: "Scanner", badge: 0 },
   ];
 
   return (
