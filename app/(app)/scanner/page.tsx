@@ -283,28 +283,33 @@ export default function ScannerPage() {
             <div className="hint">Nothing ticked = every folder except trash/junk.</div>
           </div>
 
-          <div className="scan-hook">
-            <div className="scan-folders-head">
-              <span className="scan-label" style={{ margin: 0 }}>Discord webhook</span>
-              <button className="btn btn-sm btn-ghost" onClick={() => sendNotify(hits, scanned, false)}
-                      disabled={!hookUrl.trim()}>Send test</button>
+          <details className="scan-hook">
+            <summary>
+              Discord webhook <span className="scan-hook-sub">· {hookUrl.trim() ? "configured" : "off"}</span>
+            </summary>
+            <div className="scan-hook-body">
+              <div className="scan-folders-head">
+                <span className="scan-label" style={{ margin: 0 }}>Webhook URL &amp; ping</span>
+                <button className="btn btn-sm btn-ghost" onClick={() => sendNotify(hits, scanned, false)}
+                        disabled={!hookUrl.trim()}>Send test</button>
+              </div>
+              <input value={hookUrl} placeholder="https://discord.com/api/webhooks/…"
+                     onChange={(e) => { setHookUrl(e.target.value); persist("scan_hook_url", e.target.value); }} />
+              <input value={hookMention} placeholder="your Discord user ID (to get pinged)" style={{ marginTop: 8 }}
+                     onChange={(e) => { setHookMention(e.target.value); persist("scan_hook_mention", e.target.value); }} />
+              <label className="scan-check">
+                <input type="checkbox" checked={hookOnFinish}
+                       onChange={(e) => { setHookOnFinish(e.target.checked); persist("scan_hook_finish", e.target.checked ? "1" : "0"); }} />
+                <span>Notify when a scan finishes</span>
+              </label>
+              <label className="scan-check">
+                <input type="checkbox" checked={hookAttachCsv}
+                       onChange={(e) => { setHookAttachCsv(e.target.checked); persist("scan_hook_csv", e.target.checked ? "1" : "0"); }} />
+                <span>Attach the results CSV</span>
+              </label>
+              {hookStatus && <div className="hint" style={{ marginTop: 6 }}>{hookStatus}</div>}
             </div>
-            <input value={hookUrl} placeholder="https://discord.com/api/webhooks/…"
-                   onChange={(e) => { setHookUrl(e.target.value); persist("scan_hook_url", e.target.value); }} />
-            <input value={hookMention} placeholder="your Discord user ID (to get pinged)" style={{ marginTop: 8 }}
-                   onChange={(e) => { setHookMention(e.target.value); persist("scan_hook_mention", e.target.value); }} />
-            <label className="scan-check">
-              <input type="checkbox" checked={hookOnFinish}
-                     onChange={(e) => { setHookOnFinish(e.target.checked); persist("scan_hook_finish", e.target.checked ? "1" : "0"); }} />
-              <span>Notify when a scan finishes</span>
-            </label>
-            <label className="scan-check">
-              <input type="checkbox" checked={hookAttachCsv}
-                     onChange={(e) => { setHookAttachCsv(e.target.checked); persist("scan_hook_csv", e.target.checked ? "1" : "0"); }} />
-              <span>Attach the results CSV</span>
-            </label>
-            {hookStatus && <div className="hint" style={{ marginTop: 6 }}>{hookStatus}</div>}
-          </div>
+          </details>
 
           <div className="scan-actions">
             {!scanning ? (

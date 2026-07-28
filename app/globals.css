@@ -536,7 +536,18 @@ select { cursor: pointer; }
 .scan-folder.off { color: var(--text-3); }
 .scan-folder input { width: auto; }
 .scan-folder .scan-tag { margin-left: auto; font-size: 10.5px; color: var(--text-3); }
+/* Webhook settings tucked into a collapsed disclosure so they don't shout. */
 .scan-hook { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
+.scan-hook > summary {
+  cursor: pointer; user-select: none; list-style: none;
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-3);
+}
+.scan-hook > summary::-webkit-details-marker { display: none; }
+.scan-hook > summary::before { content: "▸ "; }
+.scan-hook[open] > summary::before { content: "▾ "; }
+.scan-hook > summary:hover { color: var(--text-2); }
+.scan-hook-sub { text-transform: none; letter-spacing: 0; }
+.scan-hook-body { margin-top: 10px; }
 .scan-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); margin-top: 8px; cursor: pointer; }
 .scan-check input { width: auto; }
 .scan-actions { display: flex; gap: 8px; margin-top: 16px; }

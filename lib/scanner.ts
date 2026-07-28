@@ -57,10 +57,14 @@ export type FolderInfo = { path: string; name: string; skip: boolean; reason: st
 const SKIP_NAMES = new Set(["trash", "kos", "koš", "deleted", "deleted items", "deleted messages", "junk", "spam", "junk e-mail"]);
 
 // Per-chunk budget. 45s of work leaves headroom under the 60s function ceiling;
-// the batch is the unit we check the clock between, so it never overruns by much.
+// the window is the unit we check the clock between, so it never overruns by much.
 const CHUNK_MS = 45_000;
-const BATCH = 40; // UIDs whose headers we pull at once
-const MAX_BODIES_PER_CHUNK = 150; // defensive cap for the no-subject-filter case
+// Speed comes from BATCHING commands: pull headers for a whole window in one
+// FETCH, then pull the (few) matching bodies grouped into one FETCH per batch —
+// instead of a round-trip per message, which is what made it crawl.
+const HEADER_WINDOW = 300; // UIDs whose headers we pull in ONE fetch command
+const BODY_BATCH = 50; // matched UIDs whose full source we pull in ONE fetch command
+const MAX_BODIES_PER_CHUNK = 900; // defensive cap (fetches are batched, so generous)
 
 function client(): ImapFlow {
   return new ImapFlow({
@@ -196,14 +200,14 @@ export async function scanChunk(filter: ScanFilter, cursor: ScanCursor): Promise
         uids = (uids || []).filter((u) => u < belowUid).sort((a, b) => b - a);
 
         let processed = 0;
-        for (let b = 0; b < uids.length; b += BATCH) {
+        for (let w = 0; w < uids.length; w += HEADER_WINDOW) {
           if (Date.now() - started > CHUNK_MS || bodies >= MAX_BODIES_PER_CHUNK) break;
-          const slice = uids.slice(b, b + BATCH);
+          const win = uids.slice(w, w + HEADER_WINDOW);
 
-          // Cheap header pass: collect the subject-matches.
+          // 1) Header pass — ONE fetch for the whole window; keep the subject-matches.
           const matches: { uid: number; env: FetchMessageObject["envelope"]; hdr: Buffer | undefined; subject: string }[] = [];
           for await (const msg of c.fetch(
-            slice.join(","),
+            win.join(","),
             { uid: true, envelope: true, headers: ["delivered-to", "x-original-to", "envelope-to"] },
             { uid: true }
           )) {
@@ -213,18 +217,28 @@ export async function scanChunk(filter: ScanFilter, cursor: ScanCursor): Promise
             matches.push({ uid: Number(msg.uid), env: msg.envelope, hdr: msg.headers as Buffer | undefined, subject });
           }
 
-          // Expensive body pass, only for the subject-matches.
-          for (const m of matches) {
-            let body = "";
-            if (needBody) {
-              bodies++;
-              const full = await c.fetchOne(String(m.uid), { source: true }, { uid: true });
-              if (full && full.source) {
-                const parsed = await simpleParser(full.source as Buffer);
-                body = (parsed.text || "") + "\n" + htmlToText(typeof parsed.html === "string" ? parsed.html : "");
+          // 2) Body pass — only when phrases are set, BATCHED (one fetch per
+          //    BODY_BATCH uids) instead of a round-trip per message.
+          const bodyText = new Map<number, string>();
+          if (needBody && matches.length) {
+            const ids = matches.map((m) => m.uid);
+            for (let j = 0; j < ids.length; j += BODY_BATCH) {
+              const grp = ids.slice(j, j + BODY_BATCH);
+              for await (const msg of c.fetch(grp.join(","), { uid: true, source: true }, { uid: true })) {
+                bodies++;
+                if (!msg.source) continue;
+                const parsed = await simpleParser(msg.source as Buffer);
+                bodyText.set(
+                  Number(msg.uid),
+                  (parsed.text || "") + "\n" + htmlToText(typeof parsed.html === "string" ? parsed.html : "")
+                );
               }
             }
-            const matched = matchPhrases(m.subject, body, phrases, matchAll);
+          }
+
+          // 3) Confirm the phrase match (loose, emoji/wrap-safe) and build hits.
+          for (const m of matches) {
+            const matched = matchPhrases(m.subject, bodyText.get(m.uid) || "", phrases, matchAll);
             if (matched === null) continue;
 
             const to = m.env?.to?.[0]?.address || "";
@@ -247,8 +261,8 @@ export async function scanChunk(filter: ScanFilter, cursor: ScanCursor): Promise
             });
           }
 
-          belowUid = slice[slice.length - 1]; // slice is descending → last is min
-          processed += slice.length;
+          belowUid = win[win.length - 1]; // window is descending → last is the min
+          processed += win.length;
         }
 
         const exhausted = processed >= uids.length;
