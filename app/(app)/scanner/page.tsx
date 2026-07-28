@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { download } from "../exportRows";
 import type { ScanHit, ScanCursor, FolderInfo } from "@/lib/scanner";
 
@@ -35,6 +35,32 @@ export default function ScannerPage() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const stopRef = useRef(false);
+
+  // Discord webhook — user-supplied and remembered in the browser (localStorage),
+  // so a live webhook token never has to live in the repo.
+  const [hookUrl, setHookUrl] = useState("");
+  const [hookMention, setHookMention] = useState("");
+  const [hookOnFinish, setHookOnFinish] = useState(true);
+  const [hookAttachCsv, setHookAttachCsv] = useState(true);
+  const [hookStatus, setHookStatus] = useState("");
+
+  useEffect(() => {
+    try {
+      setHookUrl(localStorage.getItem("scan_hook_url") || "");
+      setHookMention(localStorage.getItem("scan_hook_mention") || "");
+      setHookOnFinish(localStorage.getItem("scan_hook_finish") !== "0");
+      setHookAttachCsv(localStorage.getItem("scan_hook_csv") !== "0");
+    } catch {
+      /* localStorage blocked — just use defaults */
+    }
+  }, []);
+  const persist = (k: string, v: string) => {
+    try {
+      localStorage.setItem(k, v);
+    } catch {
+      /* ignore */
+    }
+  };
 
   function currentFilter() {
     return {
@@ -75,6 +101,8 @@ export default function ScannerPage() {
     let cursor: ScanCursor = null;
     let total = 0;
     let stallGuard = 0;
+    let errored = false;
+    const collected: ScanHit[] = []; // local copy so the webhook has the full set
 
     try {
       while (!stopRef.current) {
@@ -88,7 +116,10 @@ export default function ScannerPage() {
 
         total += chunk.scanned;
         setScanned(total);
-        if (chunk.hits.length) setHits((prev) => [...prev, ...chunk.hits]);
+        if (chunk.hits.length) {
+          collected.push(...chunk.hits);
+          setHits((prev) => [...prev, ...chunk.hits]);
+        }
 
         if (chunk.done) {
           setProgress("");
@@ -105,10 +136,17 @@ export default function ScannerPage() {
         if (!cursor) break;
       }
     } catch (e) {
+      errored = true;
       setError(e instanceof Error ? e.message : String(e));
     }
     setScanning(false);
     if (stopRef.current) setProgress("Stopped.");
+
+    // Fire the Discord webhook once the scan wraps up (finished or stopped), the
+    // same "on finish" behaviour the old standalone scraper had.
+    if (!errored && hookOnFinish && hookUrl.trim()) {
+      sendNotify(collected, total, stopRef.current);
+    }
   }
 
   const shown = useMemo(() => {
@@ -119,7 +157,7 @@ export default function ScannerPage() {
     );
   }, [hits, search]);
 
-  function exportCsv() {
+  function hitsToCsv(rows: ScanHit[]): string {
     const cols: [string, (h: ScanHit) => string][] = [
       ["recipient", (h) => h.recipient],
       ["delivered_to", (h) => h.deliveredTo],
@@ -134,8 +172,52 @@ export default function ScannerPage() {
     ];
     const cell = (s: string) => (/[",\n\r;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
     const head = cols.map((c) => c[0]).join(";");
-    const rows = shown.map((h) => cols.map((c) => cell(c[1](h))).join(";"));
-    download(`scan_${new Date().toISOString().slice(0, 10)}.csv`, "﻿" + [head, ...rows].join("\r\n"), "text/csv;charset=utf-8");
+    const out = rows.map((h) => cols.map((c) => cell(c[1](h))).join(";"));
+    return "﻿" + [head, ...out].join("\r\n");
+  }
+
+  function exportCsv() {
+    download(`scan_${new Date().toISOString().slice(0, 10)}.csv`, hitsToCsv(shown), "text/csv;charset=utf-8");
+  }
+
+  // A short human summary of the filter, for the Discord embed.
+  function scopeString(): string {
+    const parts: string[] = [];
+    if (subject.trim()) parts.push(`Subject "${subject.trim()}"`);
+    const ph = phrases.split("\n").map((s) => s.trim()).filter(Boolean);
+    if (ph.length) parts.push(`${ph.length} phrase(s) (${matchAll ? "all" : "any"})`);
+    if (since) parts.push(`since ${since}`);
+    parts.push(picked.size ? `${picked.size} folder(s)` : "all folders");
+    return parts.join(" · ");
+  }
+
+  async function sendNotify(rows: ScanHit[], scannedTotal: number, stopped: boolean) {
+    if (!hookUrl.trim()) {
+      setHookStatus("No webhook URL set.");
+      return;
+    }
+    setHookStatus("Sending…");
+    try {
+      const res = await fetch("/api/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "notify",
+          url: hookUrl.trim(),
+          mentionId: hookMention.trim() || undefined,
+          matches: rows.length,
+          scanned: scannedTotal,
+          scope: scopeString(),
+          stopped,
+          csv: hookAttachCsv && rows.length ? hitsToCsv(rows) : undefined,
+          csvName: `scan_${new Date().toISOString().slice(0, 10)}.csv`,
+        }),
+      });
+      const r = await res.json();
+      setHookStatus(r.ok ? `Webhook sent (${r.detail}).` : `Webhook failed: ${r.detail}`);
+    } catch (e) {
+      setHookStatus("Webhook failed: " + (e instanceof Error ? e.message : String(e)));
+    }
   }
 
   return (
@@ -199,6 +281,29 @@ export default function ScannerPage() {
               </div>
             )}
             <div className="hint">Nothing ticked = every folder except trash/junk.</div>
+          </div>
+
+          <div className="scan-hook">
+            <div className="scan-folders-head">
+              <span className="scan-label" style={{ margin: 0 }}>Discord webhook</span>
+              <button className="btn btn-sm btn-ghost" onClick={() => sendNotify(hits, scanned, false)}
+                      disabled={!hookUrl.trim()}>Send test</button>
+            </div>
+            <input value={hookUrl} placeholder="https://discord.com/api/webhooks/…"
+                   onChange={(e) => { setHookUrl(e.target.value); persist("scan_hook_url", e.target.value); }} />
+            <input value={hookMention} placeholder="your Discord user ID (to get pinged)" style={{ marginTop: 8 }}
+                   onChange={(e) => { setHookMention(e.target.value); persist("scan_hook_mention", e.target.value); }} />
+            <label className="scan-check">
+              <input type="checkbox" checked={hookOnFinish}
+                     onChange={(e) => { setHookOnFinish(e.target.checked); persist("scan_hook_finish", e.target.checked ? "1" : "0"); }} />
+              <span>Notify when a scan finishes</span>
+            </label>
+            <label className="scan-check">
+              <input type="checkbox" checked={hookAttachCsv}
+                     onChange={(e) => { setHookAttachCsv(e.target.checked); persist("scan_hook_csv", e.target.checked ? "1" : "0"); }} />
+              <span>Attach the results CSV</span>
+            </label>
+            {hookStatus && <div className="hint" style={{ marginTop: 6 }}>{hookStatus}</div>}
           </div>
 
           <div className="scan-actions">

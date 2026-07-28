@@ -54,6 +54,75 @@ export async function notifyDiscord(sale: ParsedSale): Promise<void> {
   await post(url, { ...mention(), embeds: [embed] });
 }
 
+// ── Scanner finish notification ───────────────────────────────────────
+// Unlike the sale/payout pings, the webhook URL here is USER-SUPPLIED (typed
+// into the Scanner UI), not an env var — so a live webhook token never has to
+// live in the repo. Optionally attaches the results CSV as a real file, exactly
+// like the old standalone scraper did. Returns a result so the UI can show it.
+const MAX_CSV_BYTES = 7 * 1024 * 1024; // Discord's limit is 8 MB — keep a margin
+
+export async function notifyScan(opts: {
+  url: string;
+  mentionId?: string;
+  matches: number;
+  scanned: number;
+  account: string;
+  scope?: string;
+  stopped?: boolean;
+  csv?: { name: string; content: string };
+}): Promise<{ ok: boolean; detail: string }> {
+  if (!opts.url || !/^https?:\/\//i.test(opts.url)) return { ok: false, detail: "no/invalid webhook URL" };
+
+  const embed = {
+    title: opts.stopped ? "🟠 Scan stopped" : "✅ Scan finished",
+    color: opts.stopped ? 0xf0a93b : 0x3ecf8e,
+    fields: [
+      { name: "Matches", value: `**${opts.matches}**`, inline: true },
+      { name: "Scanned", value: String(opts.scanned), inline: true },
+      { name: "Account", value: opts.account || "—", inline: true },
+      ...(opts.scope ? [{ name: "Filter", value: opts.scope.slice(0, 1000), inline: false }] : []),
+    ],
+    footer: { text: "DeskTracker · Scanner" },
+    timestamp: new Date().toISOString(),
+  };
+
+  const payloadObj: Record<string, unknown> = { embeds: [embed] };
+  if (opts.mentionId) {
+    payloadObj.content = `<@${opts.mentionId}>`;
+    payloadObj.allowed_mentions = { parse: [], users: [opts.mentionId] };
+  }
+  const payload = JSON.stringify(payloadObj);
+
+  try {
+    const attach = opts.csv && opts.csv.content && opts.csv.content.length <= MAX_CSV_BYTES;
+    if (attach && opts.csv) {
+      // multipart/form-data: payload_json + the CSV as files[0], same shape Discord
+      // expects and the old scraper used. Blob carries the boundary content-type.
+      const boundary = "----desktracker" + Math.random().toString(16).slice(2);
+      const body = new Blob(
+        [
+          `--${boundary}\r\nContent-Disposition: form-data; name="payload_json"\r\nContent-Type: application/json\r\n\r\n`,
+          payload,
+          `\r\n--${boundary}\r\nContent-Disposition: form-data; name="files[0]"; filename="${opts.csv.name}"\r\nContent-Type: text/csv; charset=utf-8\r\n\r\n`,
+          opts.csv.content,
+          `\r\n--${boundary}--\r\n`,
+        ],
+        { type: `multipart/form-data; boundary=${boundary}` }
+      );
+      const res = await fetch(opts.url, { method: "POST", body });
+      return { ok: res.ok, detail: `HTTP ${res.status}` + (res.ok ? " + CSV" : "") };
+    }
+    const res = await fetch(opts.url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: payload,
+    });
+    return { ok: res.ok, detail: `HTTP ${res.status}` };
+  } catch (e) {
+    return { ok: false, detail: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 // Payout notification — a separate webhook (DISCORD_PAYMENT_WEBHOOK_URL) so
 // "money landed" pings can go to their own channel, apart from sale alerts.
 export async function notifyPayment(payment: ViagogoPayment, markedPaid = 0): Promise<void> {
