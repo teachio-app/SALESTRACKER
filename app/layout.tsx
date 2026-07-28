@@ -11,7 +11,7 @@ const inter = Inter({
 });
 
 export const metadata = {
-  title: "TicketDesk",
+  title: "DeskTracker",
   description: "Track ticket buys and sells",
 };
 

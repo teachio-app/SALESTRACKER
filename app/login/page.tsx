@@ -29,7 +29,7 @@ export default function Login() {
   return (
     <div className="login-wrap">
       <form className="login-card" onSubmit={submit}>
-        <div className="login-logo">TICKETDESK</div>
+        <div className="login-logo">DESKTRACKER</div>
         <input
           type="password"
           autoFocus

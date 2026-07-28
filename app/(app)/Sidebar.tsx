@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useDash } from "./DashContext";
 
 // Rename the app here.
-const APP_NAME = "TICKETDESK";
+const APP_NAME = "DESKTRACKER";
 
 export default function Sidebar() {
   const path = usePathname();

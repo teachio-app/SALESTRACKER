@@ -12,14 +12,14 @@ export default function ExportButtons({ rows, scope }: { rows: Ticket[]; scope: 
   const empty = rows.length === 0;
 
   function onCsv() {
-    exportCsv(rows, `ticketdesk_${stamp}.csv`);
+    exportCsv(rows, `desktracker_${stamp}.csv`);
   }
 
   async function onPdf() {
     if (busy) return;
     setBusy(true);
     try {
-      await exportPdf(rows, { filename: `ticketdesk_${stamp}.pdf`, scope, stamp });
+      await exportPdf(rows, { filename: `desktracker_${stamp}.pdf`, scope, stamp });
     } catch (e) {
       alert("PDF export failed: " + (e instanceof Error ? e.message : String(e)));
     } finally {

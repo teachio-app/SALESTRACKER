@@ -140,7 +140,7 @@ export async function exportPdf(
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
   doc.setTextColor(20);
-  doc.text("TicketDesk — inventory export", 24, 34);
+  doc.text("DeskTracker — inventory export", 24, 34);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
