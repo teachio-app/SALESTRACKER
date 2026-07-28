@@ -64,6 +64,32 @@ qty_total` already carries the "partial" fact — with the original noted in the
 comment. There's no sale date in the export, so imported rows use the **event
 date** as their chart-timeline anchor.
 
+## Cashflow: money that isn't a ticket batch
+
+A ticket row answers "how did this batch do?". It cannot answer *"I sold some
+LA28 codes today for €300"* — income with no purchase, no seats, no event. The
+`entries` table (page: **Cashflow**, API: `/api/entries`) holds those: a
+description, an amount, a date, and optionally a category, a note and the ticket
+it relates to. `ticket_id` is nullable **on purpose** — being able to record
+money that has nothing to do with a listing is the entire reason the table
+exists.
+
+Two rules:
+
+- **`amount` is always positive; `kind` (`income` | `expense`) carries the
+  sign.** Signed amounts mean one missing minus silently turns a cost into
+  income, and every `SUM` needs a `CASE` to split the two anyway. The one place
+  the sign is applied is `signedAmount()`.
+- **Cash entries never enter the ticket charts.** "Profit by month", Revenue,
+  Invested and ROI are ticket-batch quantities; folding a code sale into them
+  would make ROI meaningless. The combined figure lives on the Cashflow page as
+  **Overall incl. tickets** = this page's net + realized ticket profit over the
+  same period.
+
+Entries load alongside tickets in the `(app)` layout via `Promise.allSettled`,
+so a missing `entries` table (schema not re-run yet) shows a banner on the
+Cashflow page and leaves the rest of the dashboard working.
+
 ## The one rule that shapes everything
 
 **The poller fills in the sell side only. Buy prices are always typed in by hand.**
@@ -89,6 +115,10 @@ everything appears. Numbers are never quietly flattering.
 rows**: `create table if not exists` for a fresh install, `add column if not
 exists` per later column, and a guarded `rename` for `venue` → `location`. Never
 drop-and-recreate it.
+
+Re-run it after pulling a change that touches the schema — the Cashflow page
+needs the `entries` table, and until the file has been run again `/api/entries`
+answers `Could not find the table 'public.entries'`.
 
 ## Setup
 

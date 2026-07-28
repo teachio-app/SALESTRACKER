@@ -84,6 +84,43 @@ export function saleTotals(fills: SaleFill[] | null | undefined): { qty: number;
   );
 }
 
+// ── Cash entries ──────────────────────────────────────────────────────
+// Money in or out that isn't a ticket batch: "prodej kódů LA28", a Viagogo fee,
+// a train ticket to a collection. May point at a ticket row, may not — see the
+// `entries` table in schema.sql.
+export type CashEntry = {
+  id: string;
+  kind: "income" | "expense";
+  description: string;
+  amount: number;            // ALWAYS positive — `kind` carries the sign
+  currency: string;
+  category: string | null;
+  occurred_at: string;       // yyyy-mm-dd — when the money moved
+  ticket_id: string | null;  // optional link to the event it relates to
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** Suggestions only — the category box is free text (datalist, not a select). */
+export const ENTRY_CATEGORIES = [
+  "Codes", "Tickets", "Fees", "Shipping", "Travel", "Software", "Refund", "Other",
+] as const;
+
+/** +amount for income, −amount for a cost. The only place the sign is applied. */
+export function signedAmount(e: Pick<CashEntry, "kind" | "amount">): number {
+  return e.kind === "expense" ? -e.amount : e.amount;
+}
+
+export function entryTotals(rows: CashEntry[]): { income: number; expense: number; net: number } {
+  let income = 0, expense = 0;
+  for (const e of rows) {
+    if (e.kind === "expense") expense += e.amount;
+    else income += e.amount;
+  }
+  return { income, expense, net: income - expense };
+}
+
 export const TICKET_TYPES = ["Mobile", "PDF", "Hard ticket", "Season card"] as const;
 
 export const CURRENCIES = [
@@ -139,13 +176,30 @@ function periodDate(t: Pick<Ticket, "sold_at" | "event_date" | "created_at">): D
   return new Date(t.sold_at ?? t.event_date ?? t.created_at);
 }
 
+/** Start of the selected window, or null for "All" (no filtering at all). */
+export function periodCutoff(periodKey: string): Date | null {
+  const p = PERIODS.find((x) => x.key === periodKey);
+  if (!p?.months) return null;
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - p.months);
+  return cutoff;
+}
+
 export function filterByPeriod<T extends Pick<Ticket, "sold_at" | "event_date" | "created_at">>(
   rows: T[],
   periodKey: string
 ): T[] {
-  const p = PERIODS.find((x) => x.key === periodKey);
-  if (!p?.months) return rows;
-  const cutoff = new Date();
-  cutoff.setMonth(cutoff.getMonth() - p.months);
+  const cutoff = periodCutoff(periodKey);
+  if (!cutoff) return rows;
   return rows.filter((t) => periodDate(t) >= cutoff);
+}
+
+/** Same window, but a cash entry sits on the timeline by the date it happened. */
+export function filterEntriesByPeriod<T extends Pick<CashEntry, "occurred_at">>(
+  rows: T[],
+  periodKey: string
+): T[] {
+  const cutoff = periodCutoff(periodKey);
+  if (!cutoff) return rows;
+  return rows.filter((e) => new Date(e.occurred_at) >= cutoff);
 }

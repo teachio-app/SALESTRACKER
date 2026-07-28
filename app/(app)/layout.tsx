@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { saleTotals, type Ticket } from "@/lib/supabase";
+import { saleTotals, type CashEntry, type Ticket } from "@/lib/supabase";
 import PurchaseModal, { EMPTY_PURCHASE } from "@/app/PurchaseModal";
 import SellModal from "@/app/SellModal";
+import EntryModal, { emptyEntry } from "@/app/EntryModal";
 import Sidebar from "./Sidebar";
 import LinkModal from "./LinkModal";
 import { DashProvider, type DashCtx } from "./DashContext";
@@ -14,11 +15,14 @@ import { DashProvider, type DashCtx } from "./DashContext";
 // there's one fetch regardless of which page you're on.
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [entries, setEntries] = useState<CashEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [entriesError, setEntriesError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Partial<Ticket> | null>(null);
   const [selling, setSelling] = useState<Ticket | null>(null);
   const [linking, setLinking] = useState<Ticket | null>(null);
+  const [entryDraft, setEntryDraft] = useState<Partial<CashEntry> | null>(null);
   // Shared across Events + Charts so the chosen window carries between pages.
   const [period, setPeriod] = useState("all");
 
@@ -29,28 +33,43 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // Signature of the last data we rendered (row count + newest updated_at). A
   // background poll only re-renders when this changes, so an idle tab isn't
   // churning the table every few seconds.
-  const sigRef = useRef("");
+  const sigRef = useRef({ tickets: "", entries: "" });
 
   async function load(silent = false) {
     if (!silent) setLoading(true);
-    try {
-      const res = await fetch("/api/tickets");
-      const body = await res.json();
-      if (!res.ok || !Array.isArray(body)) {
-        throw new Error(body?.error ?? `Request failed (${res.status})`);
-      }
-      const sig = body.length + "|" + body.reduce((m: string, t: Ticket) => (t.updated_at > m ? t.updated_at : m), "");
-      if (sig !== sigRef.current) {
-        sigRef.current = sig;
-        setTickets(body);
+    // allSettled, not all: the two lists live in separate tables and one being
+    // unreachable (e.g. `entries` before schema.sql has been re-run) must not
+    // take the other's page down with it.
+    const [t, e] = await Promise.allSettled([
+      fetchList<Ticket>("/api/tickets"),
+      fetchList<CashEntry>("/api/entries"),
+    ]);
+
+    if (t.status === "fulfilled") {
+      const sig = signature(t.value);
+      if (sig !== sigRef.current.tickets) {
+        sigRef.current.tickets = sig;
+        setTickets(t.value);
       }
       setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+    } else {
+      setError(message(t.reason));
       if (!silent) setTickets([]);
-    } finally {
-      if (!silent) setLoading(false);
     }
+
+    if (e.status === "fulfilled") {
+      const sig = signature(e.value);
+      if (sig !== sigRef.current.entries) {
+        sigRef.current.entries = sig;
+        setEntries(e.value);
+      }
+      setEntriesError(null);
+    } else {
+      setEntriesError(message(e.reason));
+      if (!silent) setEntries([]);
+    }
+
+    if (!silent) setLoading(false);
   }
 
   // Live-ish: poll every 15s so a sale the mail poller just added appears without
@@ -98,6 +117,34 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     // Drop it locally first, then confirm with a silent refetch.
     setTickets((prev) => prev.filter((x) => x.id !== id));
     await fetch("/api/tickets", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    load(true);
+  }
+
+  // ── Cash entries ── same optimistic pattern as tickets, own error slot.
+  async function saveEntry(e: Partial<CashEntry>) {
+    const method = e.id ? "PATCH" : "POST";
+    if (e.id) setEntries((prev) => prev.map((x) => (x.id === e.id ? { ...x, ...e } : x)));
+    setEntryDraft(null);
+    const res = await fetch("/api/entries", {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(e),
+    });
+    if (!res.ok) {
+      const b = await res.json().catch(() => ({}));
+      setEntriesError(`Save failed: ${b.error ?? res.status}`);
+    }
+    load(true);
+  }
+
+  async function removeEntry(id: string) {
+    if (!confirm("Delete this entry?")) return;
+    setEntries((prev) => prev.filter((x) => x.id !== id));
+    await fetch("/api/entries", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
@@ -168,6 +215,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       });
       load(true);
     },
+
+    entries,
+    entriesError,
+    saveEntry,
+    removeEntry,
+    openEntry: (e) => setEntryDraft({ ...emptyEntry(), ...e }),
   };
 
   return (
@@ -179,6 +232,30 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {editing && <PurchaseModal ticket={editing} onSave={save} onClose={() => setEditing(null)} />}
       {selling && <SellModal ticket={selling} onSave={save} onClose={() => setSelling(null)} />}
       {linking && <LinkModal reviewRow={linking} onClose={() => setLinking(null)} />}
+      {entryDraft && (
+        <EntryModal entry={entryDraft} tickets={tickets} onSave={saveEntry}
+                    onClose={() => setEntryDraft(null)} />
+      )}
     </DashProvider>
   );
+}
+
+/** GET a list endpoint, turning a non-200 or a non-array body into a throw. */
+async function fetchList<T>(url: string): Promise<T[]> {
+  const res = await fetch(url);
+  const body = await res.json().catch(() => null);
+  if (!res.ok || !Array.isArray(body)) {
+    throw new Error(body?.error ?? `Request failed (${res.status})`);
+  }
+  return body as T[];
+}
+
+/** Row count + newest updated_at: changes only when the data actually did, so an
+ *  idle tab's 15s poll doesn't re-render the table every time. */
+function signature(rows: { updated_at: string }[]): string {
+  return rows.length + "|" + rows.reduce((m, r) => (r.updated_at > m ? r.updated_at : m), "");
+}
+
+function message(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
 }

@@ -7,10 +7,12 @@
 // actually click "Export PDF".
 
 import {
+  type CashEntry,
   type Ticket,
   realizedProfit,
   realizedRoi,
   pricePerTicket,
+  signedAmount,
 } from "@/lib/supabase";
 
 const STATUS: Record<Ticket["status"], string> = {
@@ -105,6 +107,28 @@ export function download(filename: string, content: BlobPart, type: string): voi
 export function exportCsv(rows: Ticket[], filename: string): void {
   // Prepend a UTF-8 BOM so Excel renders diacritics (č, á, í) instead of mojibake.
   download(filename, "﻿" + toCsv(rows), "text/csv;charset=utf-8");
+}
+
+// ── Cashflow CSV ──────────────────────────────────────────────────────
+// Two amount columns on purpose: `Amount` is what was typed (always positive,
+// with Kind alongside), `Signed` is the same figure ready to SUM in a
+// spreadsheet without writing an IF over the Kind column.
+export function exportEntriesCsv(rows: CashEntry[], tickets: Ticket[], filename: string): void {
+  const name = new Map(tickets.map((t) => [t.id, t.event_name]));
+  const cols: { header: string; value: (e: CashEntry) => string }[] = [
+    { header: "Date", value: (e) => e.occurred_at },
+    { header: "Kind", value: (e) => (e.kind === "expense" ? "Cost" : "Income") },
+    { header: "Description", value: (e) => e.description },
+    { header: "Category", value: (e) => e.category ?? "" },
+    { header: "Amount", value: (e) => money(e.amount) },
+    { header: "Signed", value: (e) => money(signedAmount(e)) },
+    { header: "Currency", value: (e) => e.currency },
+    { header: "Related event", value: (e) => (e.ticket_id ? name.get(e.ticket_id) ?? "" : "") },
+    { header: "Note", value: (e) => e.note ?? "" },
+  ];
+  const head = cols.map((c) => csvCell(c.header)).join(",");
+  const body = rows.map((e) => cols.map((c) => csvCell(c.value(e))).join(","));
+  download(filename, "﻿" + [head, ...body].join("\r\n"), "text/csv;charset=utf-8");
 }
 
 // ── PDF ───────────────────────────────────────────────────────────────

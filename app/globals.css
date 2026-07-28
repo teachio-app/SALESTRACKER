@@ -81,6 +81,13 @@ body {
   background: var(--accent); color: #fff; font-weight: 500; margin-top: 6px;
 }
 .nav-btn.nav-add:hover { background: var(--accent-hover); }
+/* Secondary add (cash entry): same shape, quieter fill — it's the other kind of
+   "new row", not a second primary action competing with Add purchase. */
+.nav-btn.nav-add-alt {
+  background: var(--accent-dim); color: var(--accent);
+  border: 1px solid rgba(57, 135, 229, 0.35); font-weight: 500; margin-top: 4px;
+}
+.nav-btn.nav-add-alt:hover { background: rgba(57, 135, 229, 0.2); color: var(--accent-hover); }
 .nav-section {
   color: var(--text-3); font-size: 10.5px; font-weight: 600;
   letter-spacing: 0.08em; text-transform: uppercase;
@@ -287,6 +294,44 @@ body {
   .flag-badge, .stat-problem { animation: none; }
 }
 
+/* ── Cashflow (manual income / costs) ──────────────────────────────────
+   The quick-add bar is one line so a new entry costs a sentence and Enter.
+   Inputs default to width:100%, so each cell states its own width here. */
+.quick-add {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 10px 12px; margin-bottom: 12px;
+}
+.quick-add .qa-kind { width: auto; flex: 0 0 auto; }
+.quick-add .qa-desc { flex: 1 1 240px; min-width: 0; }
+.quick-add .qa-amount { flex: 0 0 110px; width: 110px; text-align: right; }
+.quick-add .qa-cur { width: auto; flex: 0 0 auto; }
+.quick-add .qa-date { flex: 0 0 150px; width: 150px; }
+
+/* Money in / money out, everywhere it's shown. */
+.amount-in { color: var(--good); font-weight: 500; }
+.amount-out { color: var(--bad); font-weight: 500; }
+.amount-col { text-align: right; white-space: nowrap; }
+.entry-desc { font-weight: 500; }
+.entry-sub { color: var(--text-3); font-size: 11.5px; }
+.tag {
+  display: inline-block; padding: 1px 8px; border-radius: 10px;
+  background: var(--panel-2); border: 1px solid var(--border-strong);
+  color: var(--text-2); font-size: 11px; white-space: nowrap;
+}
+
+/* Direction picker in the entry modal — two targets, not a dropdown: which way
+   the money went is the one field that must never be chosen by accident. */
+.kind-toggle { display: flex; gap: 8px; margin-bottom: 14px; }
+.kind-btn {
+  flex: 1; padding: 9px 12px; border-radius: var(--radius);
+  border: 1px solid var(--border-strong); background: var(--bg);
+  color: var(--text-3); font: inherit; font-size: 13.5px; font-weight: 500; cursor: pointer;
+}
+.kind-btn:hover { color: var(--text); border-color: var(--text-3); }
+.kind-btn.is-in { background: rgba(12, 163, 12, 0.14); border-color: var(--good); color: #6fd36f; }
+.kind-btn.is-out { background: rgba(208, 59, 59, 0.14); border-color: var(--bad); color: #ff8080; }
+
 /* ── Controls ── */
 input:not([type="checkbox"]):not([type="radio"]), select, textarea {
   width: 100%;
@@ -483,6 +528,13 @@ select { cursor: pointer; }
 
   .table-toolbar { flex-wrap: wrap; }
   .search { max-width: none; flex: 1 1 100%; }
+
+  /* Quick-add stacks: five controls side by side don't fit a phone. */
+  .quick-add .qa-desc,
+  .quick-add .qa-amount,
+  .quick-add .qa-date { flex: 1 1 100%; width: 100%; }
+  .quick-add .qa-amount { text-align: left; }
+  .kind-toggle { gap: 6px; }
 
   /* Charts: one column (the minmax(360px) grid overflowed a phone), smaller
      figures, and cards that can shrink instead of forcing the page wide. */

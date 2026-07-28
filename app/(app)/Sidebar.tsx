@@ -9,11 +9,12 @@ const APP_NAME = "DESKTRACKER";
 
 export default function Sidebar() {
   const path = usePathname();
-  const { openAdd, tickets } = useDash();
+  const { openAdd, openEntry, tickets } = useDash();
   const reviewCount = tickets.filter((t) => t.needs_review).length;
 
   const NAV = [
     { href: "/", label: "Events", badge: 0 },
+    { href: "/cashflow", label: "Cashflow", badge: 0 },
     { href: "/charts", label: "Charts", badge: 0 },
     { href: "/review", label: "Review", badge: reviewCount },
     { href: "/scanner", label: "Scanner", badge: 0 },
@@ -37,6 +38,9 @@ export default function Sidebar() {
         {APP_NAME}
       </div>
       <button className="nav-btn nav-add" onClick={openAdd}>+ Add purchase</button>
+      {/* Money that isn't a ticket batch — reachable from every page, because
+          "I just got paid for the LA28 codes" happens wherever you are. */}
+      <button className="nav-btn nav-add-alt" onClick={() => openEntry()}>+ Add income / cost</button>
       {NAV.map((n) => (
         <Link key={n.href} href={n.href}
               className={"nav-btn" + (path === n.href ? " is-active" : "")}>

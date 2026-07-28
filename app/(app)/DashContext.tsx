@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext } from "react";
-import type { Ticket } from "@/lib/supabase";
+import type { CashEntry, Ticket } from "@/lib/supabase";
 
 // Shared data + actions, provided by the (app) layout and consumed by both the
 // events table and the charts page. Fetched once per navigation into the group,
@@ -26,6 +26,15 @@ export type DashCtx = {
   openLink: (reviewRow: Ticket) => void;
   /** Merge a flagged sale into an existing purchase, then drop the sale row. */
   linkSale: (reviewRow: Ticket, purchase: Ticket) => Promise<void>;
+
+  // ── Cashflow: manual money in / out, ticket-related or not ──
+  entries: CashEntry[];
+  /** Kept apart from `error` so a missing `entries` table can't blank the events page. */
+  entriesError: string | null;
+  saveEntry: (e: Partial<CashEntry>) => Promise<void>;
+  removeEntry: (id: string) => Promise<void>;
+  /** Open the entry modal — prefilled when the quick-add row hands over a draft. */
+  openEntry: (e?: Partial<CashEntry>) => void;
 };
 
 const Ctx = createContext<DashCtx | null>(null);

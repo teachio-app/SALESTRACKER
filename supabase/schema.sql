@@ -97,6 +97,54 @@ set sales = jsonb_build_array(jsonb_build_object(
 ))
 where qty_sold > 0 and sales = '[]'::jsonb;
 
+-- ── Cash entries: money in / money out, ticket-related or not ────────
+-- The tickets table answers "how did this batch do?". It cannot answer "I sold
+-- some LA28 codes today for 300" — income with no purchase, no seats, no event
+-- behind it. Bending a ticket row into holding that (a fake 1-ticket purchase
+-- with an invented event name) would pollute every count, chart and export, so
+-- those live in their own ledger.
+--
+-- `amount` is ALWAYS positive; `kind` carries the sign. Signed amounts mean one
+-- missing minus silently turns a cost into income, and every SUM needs a CASE to
+-- split the two anyway.
+--
+-- ticket_id is optional on purpose — that's the point of this table. Set it and
+-- the entry shows which event it belongs to (a 12 EUR delivery fee on one
+-- order); deleting that ticket nulls the link instead of taking the entry with
+-- it, because the money moved whether or not the row still exists.
+create table if not exists entries (
+  id          uuid primary key default gen_random_uuid(),
+  kind        text not null default 'income',
+  description text not null,
+  amount      numeric(12,2) not null default 0,
+  currency    text not null default 'EUR',
+  category    text,                  -- free text, e.g. "Codes", "Fees", "Travel"
+  occurred_at date not null default current_date,   -- when the money moved
+  ticket_id   uuid references tickets (id) on delete set null,
+  note        text,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+-- Idempotent steps for a table made by an earlier run of this file.
+alter table entries add column if not exists category text;
+alter table entries add column if not exists note     text;
+
+-- `add constraint` has no IF NOT EXISTS, so guard it like the enum above.
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'entries_kind_chk') then
+    alter table entries add constraint entries_kind_chk check (kind in ('income', 'expense'));
+  end if;
+end $$;
+
+-- Same lockdown as tickets: RLS on, zero policies. Reached only through the
+-- server-side service-role key.
+alter table entries enable row level security;
+
+create index if not exists entries_occurred_at_idx on entries (occurred_at);
+create index if not exists entries_ticket_id_idx   on entries (ticket_id);
+
 -- ── Poller watermark ─────────────────────────────────────────────────
 -- Where the mail poller got to, so processing state lives HERE and not in the
 -- owner's mailbox.
@@ -191,4 +239,11 @@ $$ language plpgsql;
 drop trigger if exists tickets_touch on tickets;
 create trigger tickets_touch
   before update on tickets
+  for each row execute function touch_updated_at();
+
+-- Cash entries get the same treatment (the app polls on updated_at to decide
+-- whether anything actually changed, so a stale stamp means a missed refresh).
+drop trigger if exists entries_touch on entries;
+create trigger entries_touch
+  before update on entries
   for each row execute function touch_updated_at();
