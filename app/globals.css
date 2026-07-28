@@ -176,6 +176,8 @@ body {
 .table-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .search { max-width: 340px; }
 .search-count { color: var(--text-3); font-size: 12px; }
+/* Push the export pair to the far right of the toolbar. */
+.export-actions { margin-left: auto; display: flex; gap: 8px; }
 
 /* Sortable header */
 .th-sort { cursor: pointer; user-select: none; white-space: nowrap; }
@@ -234,6 +236,55 @@ body {
   background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn-border);
   font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
   vertical-align: middle;
+}
+
+/* ── Problem flag ──────────────────────────────────────────────────────
+   A flagged transaction glows red so it can't be forgotten. The tint lives on
+   the <td> (not the <tr>) so it paints over both the zebra shade and the hover
+   shade; hover just deepens it. A left bar and a pulsing badge do the "shining". */
+.table tbody tr.is-flagged td { background: rgba(208, 59, 59, 0.13); }
+.table tbody tr.is-flagged:hover td { background: rgba(208, 59, 59, 0.20); }
+.table tbody tr.is-flagged td:first-child { box-shadow: inset 3px 0 0 0 var(--bad); }
+
+.flag-badge {
+  display: inline-block; margin-right: 6px; padding: 1px 6px; border-radius: 4px;
+  background: rgba(208, 59, 59, 0.16); color: #ff6b6b; border: 1px solid rgba(208, 59, 59, 0.55);
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  vertical-align: middle; animation: flagPulse 1.8s ease-in-out infinite;
+}
+.flag-note { color: #ff8080; font-size: 11.5px; margin-top: 2px; }
+
+@keyframes flagPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(208, 59, 59, 0); }
+  50%      { box-shadow: 0 0 8px 1px rgba(208, 59, 59, 0.6); }
+}
+
+/* Flag toggle button in the row actions. */
+.btn-flag { background: transparent; border: 1px solid var(--warn-border); color: var(--warn); }
+.btn-flag:hover { background: var(--warn-bg); }
+.btn-flag-on { background: rgba(208, 59, 59, 0.18); border: 1px solid var(--bad); color: #ff6b6b; }
+.btn-flag-on:hover { background: rgba(208, 59, 59, 0.28); }
+
+/* Problems count in the summary — glows when there's anything to worry about. */
+.stat-problem { color: #ff6b6b; animation: problemGlow 1.8s ease-in-out infinite; }
+@keyframes problemGlow {
+  0%, 100% { text-shadow: 0 0 4px rgba(208, 59, 59, 0.25); }
+  50%      { text-shadow: 0 0 12px rgba(208, 59, 59, 0.75); }
+}
+
+/* Problem field inside the edit modal. */
+.problem-box {
+  margin-top: 14px; padding: 12px 14px; border-radius: var(--radius);
+  border: 1px solid var(--border-strong); background: var(--bg);
+}
+.problem-box.is-on { border-color: var(--bad); background: rgba(208, 59, 59, 0.08); }
+.problem-check { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: var(--text-2); }
+.problem-check input { width: auto; }
+.problem-box.is-on .problem-check { color: #ff8080; font-weight: 600; }
+.problem-box textarea { margin-top: 10px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .flag-badge, .stat-problem { animation: none; }
 }
 
 /* ── Controls ── */

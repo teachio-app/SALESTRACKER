@@ -34,6 +34,8 @@ export const EMPTY_PURCHASE: Partial<Ticket> = {
   payment_method: "",
   vgg_event_id: "",
   comment: "",
+  flagged: false,
+  flag_note: "",
   sales: [],
 };
 
@@ -217,6 +219,20 @@ export default function PurchaseModal({
             <textarea rows={3} value={form.comment ?? ""} onChange={(e) => set("comment", e.target.value)}
                       placeholder="Additional notes…" />
           </Field>
+
+          {/* Problem flag — makes the row glow red in the table. Ticking the box
+              (or typing a note) is how a bad refund / payment mismatch gets
+              marked so it can't be forgotten. */}
+          <div className={"problem-box" + (form.flagged ? " is-on" : "")}>
+            <label className="problem-check">
+              <input type="checkbox" checked={!!form.flagged}
+                     onChange={(e) => set("flagged", e.target.checked)} />
+              <span>⚠ There's a problem with this transaction</span>
+            </label>
+            <textarea rows={2} value={form.flag_note ?? ""}
+                      onChange={(e) => set("flag_note", e.target.value)}
+                      placeholder="What's wrong? e.g. Viagogo refunded €40 too little" />
+          </div>
         </div>
 
         <footer className="modal-foot">

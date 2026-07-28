@@ -58,6 +58,8 @@ export type Ticket = {
   vgg_event_id: string | null;
   comment: string | null;
   paid_out: boolean;         // has the payout reached the bank account?
+  flagged: boolean;          // user-set "problem with this transaction" flag
+  flag_note: string | null;  // what's wrong (bad refund, payment mismatch…), optional
   sales: SaleFill[];         // itemised sales; sell_price/qty_sold are their sums
   profit: number;
   sold_at: string | null;

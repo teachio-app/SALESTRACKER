@@ -5,6 +5,8 @@ import { type Ticket, realizedProfit, filterByPeriod } from "@/lib/supabase";
 import { useDash } from "./DashContext";
 import PeriodTabs from "./PeriodTabs";
 import TicketsTable from "./TicketsTable";
+import ExportButtons from "./ExportButtons";
+import { PERIODS } from "@/lib/supabase";
 
 // Fold to a comparable form: lower-case AND strip diacritics, so "cesko" finds
 // "česko" and "rosalia" finds "ROSALÍA".
@@ -53,6 +55,16 @@ export default function EventsPage() {
   const awaitingPayout = inPeriod
     .filter((t) => t.qty_sold > 0 && !t.paid_out)
     .reduce((s, t) => s + t.sell_price, 0);
+  const problems = inPeriod.filter((t) => t.flagged).length;
+
+  // Describe what the export contains, so the file's header line is honest about
+  // whether it's everything or just the current search / period slice.
+  const periodLabel = PERIODS.find((p) => p.key === period)?.label ?? "All";
+  const exportScope = searching
+    ? `Search "${search.trim()}" (${shown.length} rows)`
+    : period === "all"
+    ? "All events"
+    : `Last ${periodLabel}`;
 
   return (
     <>
@@ -62,6 +74,10 @@ export default function EventsPage() {
         <div className="summary">
           <div className="stat"><div className="label">Sold</div><div className="value">{soldRows}</div></div>
           <div className="stat"><div className="label">Listed</div><div className="value">{totalListed}</div></div>
+          <div className="stat">
+            <div className="label">Problems</div>
+            <div className={"value " + (problems > 0 ? "stat-problem" : "")}>{problems || "—"}</div>
+          </div>
           <div className="stat">
             <div className="label">Awaiting payout</div>
             <div className="value">{awaitingPayout > 0 ? `${awaitingPayout.toFixed(0)} EUR` : "—"}</div>
@@ -86,6 +102,7 @@ export default function EventsPage() {
         <input className="search" placeholder="Search — event, location, seat, order (multiple words ok)…"
                value={search} onChange={(e) => setSearch(e.target.value)} />
         {searching && <span className="search-count">{shown.length} found</span>}
+        <ExportButtons rows={shown} scope={exportScope} />
       </div>
 
       {error && (

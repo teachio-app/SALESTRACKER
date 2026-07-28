@@ -32,7 +32,7 @@ function value(t: Ticket, key: SortKey): number | string {
 }
 
 export default function TicketsTable({ rows, showLink = false }: { rows: Ticket[]; showLink?: boolean }) {
-  const { remove, setStatus, togglePaid, openEdit, openSell, copyRow, openLink, save } = useDash();
+  const { remove, setStatus, togglePaid, toggleFlag, openEdit, openSell, copyRow, openLink, save } = useDash();
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "date", dir: 1 });
 
   const sorted = useMemo(() => {
@@ -81,12 +81,16 @@ export default function TicketsTable({ rows, showLink = false }: { rows: Ticket[
             const noProfit = unsold || noCost;
             const seat = seatLine(t);
             return (
-              <tr key={t.id}>
+              <tr key={t.id} className={t.flagged ? "is-flagged" : undefined}>
                 <td>
                   <div className="event-name">
                     {t.needs_review && <span className="review-badge" title="Poller wasn't sure — check this">review</span>}
+                    {t.flagged && (
+                      <span className="flag-badge" title={t.flag_note ?? "Problem with this transaction"}>⚠ problem</span>
+                    )}
                     {t.event_name}
                   </div>
+                  {t.flagged && t.flag_note && <div className="flag-note">{t.flag_note}</div>}
                   {t.order_ref && <div className="order-ref">#{t.order_ref}</div>}
                 </td>
                 <td className="nums date-cell">{t.event_date ?? "—"}</td>
@@ -145,6 +149,9 @@ export default function TicketsTable({ rows, showLink = false }: { rows: Ticket[
                     <button className="btn btn-sm btn-primary" onClick={() => openSell(t)}>Sell</button>
                     <button className="btn btn-sm btn-ghost" onClick={() => openEdit(t)}>Edit</button>
                     <button className="btn btn-sm btn-ghost" onClick={() => copyRow(t)}>Copy</button>
+                    <button className={"btn btn-sm " + (t.flagged ? "btn-flag-on" : "btn-flag")}
+                            onClick={() => toggleFlag(t)}
+                            title={t.flagged ? "Clear the problem flag" : "Flag a problem with this transaction"}>⚠</button>
                     <button className="btn btn-sm btn-danger" onClick={() => remove(t.id)}>Delete</button>
                   </div>
                 </td>

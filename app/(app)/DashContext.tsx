@@ -15,6 +15,8 @@ export type DashCtx = {
   remove: (id: string) => Promise<void>;
   setStatus: (t: Ticket, status: Ticket["status"]) => Promise<void>;
   togglePaid: (t: Ticket) => Promise<void>;
+  /** Flag / unflag a problem with the transaction (prompts for a note on flag). */
+  toggleFlag: (t: Ticket) => void;
   period: string;
   setPeriod: (p: string) => void;
   openAdd: () => void;

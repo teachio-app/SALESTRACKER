@@ -114,6 +114,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     remove,
     setStatus: (t, status) => save({ id: t.id, status }),
     togglePaid: (t) => save({ id: t.id, paid_out: !t.paid_out }),
+    // Flag toggles the red glow. Turning it ON offers a quick note prompt (bad
+    // refund, wrong amount…); turning it OFF clears both flag and note. The note
+    // is also editable in the edit modal for anything longer.
+    toggleFlag: (t) => {
+      if (t.flagged) {
+        save({ id: t.id, flagged: false, flag_note: null });
+        return;
+      }
+      const note = window.prompt("What's wrong with this transaction? (optional)", "");
+      save({ id: t.id, flagged: true, flag_note: note?.trim() || null });
+    },
     period,
     setPeriod,
     openAdd: () => setEditing({ ...EMPTY_PURCHASE }),
@@ -125,6 +136,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       setEditing({
         ...rest, event_name: t.event_name + " (copy)",
         sales: [], qty_sold: 0, sell_price: 0, status: "not_listed", paid_out: false,
+        flagged: false, flag_note: null,
       });
     },
     openLink: (t) => setLinking(t),

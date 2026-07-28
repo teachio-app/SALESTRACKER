@@ -74,6 +74,13 @@ alter table tickets add column if not exists comment        text;
 -- after the event. Toggled by the checkbox in the events table.
 alter table tickets add column if not exists paid_out       boolean not null default false;
 
+-- Manual "something's wrong with this transaction" flag — a short-paid refund, a
+-- payment mismatch, a buyer dispute. User-set only (the poller never touches it);
+-- flagged rows glow red in the table so a problem can't be forgotten. flag_note
+-- holds the optional description of what's wrong.
+alter table tickets add column if not exists flagged        boolean not null default false;
+alter table tickets add column if not exists flag_note      text;
+
 -- Individual sales that make up a batch: a purchase of 4 can sell as 2 @ €240
 -- then 2 @ €200. Each element is { qty, amount, at, ext? } where amount is the
 -- TOTAL for that fill. sell_price / qty_sold on the row stay as the aggregates
