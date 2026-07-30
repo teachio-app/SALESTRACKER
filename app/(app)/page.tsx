@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { type Ticket, realizedProfit, filterByPeriod } from "@/lib/supabase";
+import { type Ticket, realizedProfit, filterByPeriod, openInvestment } from "@/lib/supabase";
 import { useDash } from "./DashContext";
 import PeriodTabs from "./PeriodTabs";
 import TicketsTable from "./TicketsTable";
@@ -57,6 +57,12 @@ export default function EventsPage() {
     .reduce((s, t) => s + t.sell_price, 0);
   const problems = inPeriod.filter((t) => t.flagged).length;
 
+  // Money still out, over EVERY row — not the period slice. This is a balance,
+  // not a flow: cash sunk into a purchase two years ago is still sunk today, and
+  // a 1M window that hid it would answer "how much do I have in tickets?" with a
+  // number that's only ever too low. The label says so when a period is active.
+  const invested = useMemo(() => openInvestment(tickets), [tickets]);
+
   // Describe what the export contains, so the file's header line is honest about
   // whether it's everything or just the current search / period slice.
   const periodLabel = PERIODS.find((p) => p.key === period)?.label ?? "All";
@@ -77,6 +83,19 @@ export default function EventsPage() {
           <div className="stat">
             <div className="label">Problems</div>
             <div className={"value " + (problems > 0 ? "stat-problem" : "")}>{problems || "—"}</div>
+          </div>
+          <div className="stat"
+               title="Your own money still in tickets: unsold stock, plus sold rows whose payout hasn't landed. Ticking Paid on a row takes its cost out of this. Counts every row, not just the selected period.">
+            <div className="label">
+              Invested now
+              {invested.unpriced > 0 && (
+                <span className="stat-caveat"> · {invested.unpriced} unpriced</span>
+              )}
+              {period !== "all" && invested.unpriced === 0 && (
+                <span className="stat-caveat"> · all rows</span>
+              )}
+            </div>
+            <div className="value">{invested.total > 0 ? `${invested.total.toFixed(0)} EUR` : "—"}</div>
           </div>
           <div className="stat">
             <div className="label">Awaiting payout</div>

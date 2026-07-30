@@ -98,7 +98,9 @@ body {
 .main { flex: 1; padding: 20px 22px; min-width: 0; }
 .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
 .toolbar h1 { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
-.summary { display: flex; gap: 22px; margin-left: auto; }
+/* Wraps rather than pushing the toolbar wide: there are six figures here now,
+   and a laptop-width window can't fit them on one line next to the title. */
+.summary { display: flex; gap: 10px 22px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
 
 /* Period selector — sits next to the page title; the summary (if any) keeps its
    own margin-left:auto and stays right. */

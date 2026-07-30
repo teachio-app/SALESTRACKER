@@ -162,6 +162,46 @@ export function realizedRoi(t: ProfitInput): number {
   return cost > 0 ? (realizedProfit(t) / cost) * 100 : 0;
 }
 
+// ── Open investment: money still out ──────────────────────────────────
+// How much of your own cash is sitting in tickets right now. Two things are
+// still out at any moment:
+//
+//   * tickets not sold yet — stock you paid for;
+//   * tickets that HAVE sold but whose payout hasn't landed. Sold ≠ paid;
+//     platforms pay days after the event.
+//
+// Ticking Paid on a row says the cash arrived, and what arrived covers exactly
+// the sold portion's cost — so that part stops being an investment while any
+// unsold remainder keeps counting until it too sells and gets paid:
+//
+//   tied up = buy_price − (paid_out ? realized cost : 0)
+//
+// Nothing sold → the whole buy_price. Fully sold and paid → 0. Note this is a
+// balance (what's out NOW), not a flow over a window — see the caller for why it
+// deliberately ignores the period tabs.
+export function tiedUpCost(
+  t: Pick<Ticket, "buy_price" | "qty_sold" | "qty_total" | "paid_out">
+): number {
+  const out = t.buy_price - (t.paid_out ? realizedCost(t) : 0);
+  // Guard against a row whose qty_sold exceeds qty_total (a linked sale can
+  // overshoot), which would otherwise make the balance negative.
+  return out > 0 ? out : 0;
+}
+
+/** Total still tied up, plus how many of those rows have no known cost. */
+export function openInvestment(rows: Ticket[]): { total: number; unpriced: number } {
+  let total = 0;
+  let unpriced = 0;
+  for (const t of rows) {
+    // A row is exposed while anything is unsold, or it sold and isn't paid yet.
+    const exposed = t.qty_sold < t.qty_total || !t.paid_out;
+    if (!exposed) continue;
+    if (t.buy_price > 0) total += tiedUpCost(t);
+    else unpriced++; // cost unknown → can't be counted, but must be admitted
+  }
+  return { total, unpriced };
+}
+
 // ── Period filter (shared by the Events table and the Charts page) ────
 export const PERIODS = [
   { key: "1m", label: "1M", months: 1 },

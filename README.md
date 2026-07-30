@@ -90,6 +90,28 @@ Entries load alongside tickets in the `(app)` layout via `Promise.allSettled`,
 so a missing `entries` table (schema not re-run yet) shows a banner on the
 Cashflow page and leaves the rest of the dashboard working.
 
+## Invested now: the money still out
+
+`tied up = buy_price − (paid_out ? realized cost : 0)`
+
+The **Invested now** figure on the Events page is how much of your own cash is
+sitting in tickets at this moment. Two things are out at any time: stock you
+bought and haven't sold, and rows that sold but whose payout hasn't landed —
+sold ≠ paid, platforms pay days after the event. Ticking **Paid** on a row says
+the cash arrived, and what arrived covers exactly the sold portion's cost, so
+that part drops out while any unsold remainder keeps counting.
+
+It is a **balance, not a flow**, so unlike every other figure in that header it
+deliberately ignores the period tabs: money sunk into a purchase two years ago is
+still sunk today, and a 1M window could only ever report it too low. The label
+says `· all rows` while a period is selected. Rows with no buy price can't be
+counted (their cost is unknown) and are admitted as `· N unpriced` rather than
+folded in as zero.
+
+`realizedCost` / `tiedUpCost` / `openInvestment` live in `lib/supabase.ts` and are
+pinned down by `lib/money.test.ts` — half-sold batches, a payout that landed, a
+`qty_sold` that overshoots `qty_total`. Run both suites with `npm test`.
+
 ## The one rule that shapes everything
 
 **The poller fills in the sell side only. Buy prices are always typed in by hand.**
