@@ -188,6 +188,26 @@ export function tiedUpCost(
   return out > 0 ? out : 0;
 }
 
+/**
+ * Revenue already earned that hasn't reached the bank: the sell side of every
+ * sold row still unticked. The mirror of openInvestment() — that one is cost
+ * out, this one is cash owed — and, like it, a BALANCE. Both therefore ignore
+ * the period tabs; a payout owed since May is still owed in July, and a 1M
+ * window used to report this one ~10k lower than the truth while the invested
+ * figure beside it (which never filtered) stayed put. Two numbers about the same
+ * money, computed over different sets, is how a header stops being believable.
+ */
+export function awaitingPayout(rows: Ticket[]): { total: number; count: number } {
+  let total = 0;
+  let count = 0;
+  for (const t of rows) {
+    if (t.qty_sold <= 0 || t.paid_out) continue;
+    total += t.sell_price;
+    count++;
+  }
+  return { total, count };
+}
+
 /** Total still tied up, plus how many of those rows have no known cost. */
 export function openInvestment(rows: Ticket[]): { total: number; unpriced: number } {
   let total = 0;

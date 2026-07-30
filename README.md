@@ -101,12 +101,19 @@ sold ≠ paid, platforms pay days after the event. Ticking **Paid** on a row say
 the cash arrived, and what arrived covers exactly the sold portion's cost, so
 that part drops out while any unsold remainder keeps counting.
 
-It is a **balance, not a flow**, so unlike every other figure in that header it
-deliberately ignores the period tabs: money sunk into a purchase two years ago is
-still sunk today, and a 1M window could only ever report it too low. The label
-says `· all rows` while a period is selected. Rows with no buy price can't be
-counted (their cost is unknown) and are admitted as `· N unpriced` rather than
-folded in as zero.
+**Invested now** and **Awaiting payout** are the same money seen from both sides
+— cost still out, revenue still owed — and both are **balances, not flows**, so
+both deliberately ignore the period tabs. Money sunk into a purchase two years
+ago is still sunk today; a payout owed since May is still owed in July. A window
+could only ever report either one too low, and Awaiting payout used to do exactly
+that: on 1M it read ~9.4k short while the invested figure beside it (which never
+filtered) stayed put. Two numbers about the same money computed over different
+sets is how a header stops being believable. `· all rows` marks both while a
+period is selected. Rows with no buy price can't be counted (their cost is
+unknown) and are admitted as `· N unpriced` rather than folded in as zero.
+
+The rest of that header stays period-scoped, because those figures really are
+flows or counts of the window: Sold, Problems, Total profit.
 
 `realizedCost` / `tiedUpCost` / `openInvestment` live in `lib/supabase.ts` and are
 pinned down by `lib/money.test.ts` — half-sold batches, a payout that landed, a

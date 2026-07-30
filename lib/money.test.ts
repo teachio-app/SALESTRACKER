@@ -4,7 +4,9 @@
 // their edge cases — a half-sold batch, a payout that landed, a row with no
 // known cost — get pinned down here rather than discovered on a real balance.
 
-import { realizedCost, realizedProfit, tiedUpCost, openInvestment, type Ticket } from "./supabase";
+import {
+  realizedCost, realizedProfit, tiedUpCost, openInvestment, awaitingPayout, type Ticket,
+} from "./supabase";
 
 let failed = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -57,10 +59,14 @@ check("and nothing stays tied up", tiedUpCost(done), 0);
 
 console.log("\nopenInvestment() — the dashboard figure");
 const book: Ticket[] = [
-  row({ id: "a", buy_price: 400, qty_total: 4, qty_sold: 0 }),                   // stock: 400
-  row({ id: "b", buy_price: 300, qty_total: 2, qty_sold: 2, paid_out: false }),  // sold, unpaid: 300
-  row({ id: "c", buy_price: 200, qty_total: 2, qty_sold: 2, paid_out: true }),   // settled: 0
-  row({ id: "d", buy_price: 600, qty_total: 3, qty_sold: 1, paid_out: true }),   // 2/3 unsold: 400
+  // stock, nothing sold → 400 out
+  row({ id: "a", buy_price: 400, qty_total: 4, qty_sold: 0 }),
+  // sold, payout hasn't landed → 300 out AND 380 owed
+  row({ id: "b", buy_price: 300, qty_total: 2, qty_sold: 2, sell_price: 380 }),
+  // sold and paid → settled, in neither figure
+  row({ id: "c", buy_price: 200, qty_total: 2, qty_sold: 2, sell_price: 250, paid_out: true }),
+  // 1 of 3 sold and paid → the 2 unsold still cost 400
+  row({ id: "d", buy_price: 600, qty_total: 3, qty_sold: 1, sell_price: 260, paid_out: true }),
 ];
 check("total still out", openInvestment(book).total, 1100);
 check("settled rows contribute nothing", openInvestment([book[2]]).total, 0);
@@ -74,6 +80,24 @@ check("an unpriced exposed row is admitted, not silently zeroed",
 check("an unpriced row that's settled isn't flagged",
   openInvestment([row({ buy_price: 0, qty_total: 1, qty_sold: 1, paid_out: true })]),
   { total: 0, unpriced: 0 });
+
+console.log("\nawaitingPayout() — cash owed, the mirror of the invested figure");
+check("only the sold row that isn't ticked Paid", awaitingPayout(book), { total: 380, count: 1 });
+check("an unsold row owes nothing",
+  awaitingPayout([row({ buy_price: 400, qty_total: 4, qty_sold: 0, sell_price: 0 })]), { total: 0, count: 0 });
+check("a paid row owes nothing",
+  awaitingPayout([row({ buy_price: 400, qty_total: 4, qty_sold: 4, sell_price: 500, paid_out: true })]),
+  { total: 0, count: 0 });
+check("a part-sold unpaid row owes what it has actually sold for",
+  awaitingPayout([row({ buy_price: 400, qty_total: 4, qty_sold: 2, sell_price: 260 })]),
+  { total: 260, count: 1 });
+// The pair must describe the same rows: the sell side owed and the cost side out.
+const owedRow = row({ buy_price: 300, qty_total: 2, qty_sold: 2, sell_price: 380 });
+check("same row appears in both figures while unpaid",
+  [awaitingPayout([owedRow]).total, openInvestment([owedRow]).total], [380, 300]);
+check("and leaves both the moment it's ticked Paid",
+  [awaitingPayout([{ ...owedRow, paid_out: true }]).total,
+   openInvestment([{ ...owedRow, paid_out: true }]).total], [0, 0]);
 
 console.log("\nTicking Paid is what moves the number");
 const before = row({ buy_price: 480, qty_total: 2, qty_sold: 2, paid_out: false });

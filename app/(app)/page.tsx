@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { type Ticket, realizedProfit, filterByPeriod, openInvestment } from "@/lib/supabase";
+import { type Ticket, realizedProfit, filterByPeriod, openInvestment, awaitingPayout } from "@/lib/supabase";
 import { useDash } from "./DashContext";
 import PeriodTabs from "./PeriodTabs";
 import TicketsTable from "./TicketsTable";
@@ -52,16 +52,17 @@ export default function EventsPage() {
   const totalProfit = priced.reduce((s, t) => s + realizedProfit(t), 0);
   const soldRows = inPeriod.filter((t) => t.qty_sold > 0).length;
   const totalListed = inPeriod.filter((t) => t.status === "listed").length;
-  const awaitingPayout = inPeriod
-    .filter((t) => t.qty_sold > 0 && !t.paid_out)
-    .reduce((s, t) => s + t.sell_price, 0);
   const problems = inPeriod.filter((t) => t.flagged).length;
 
-  // Money still out, over EVERY row — not the period slice. This is a balance,
-  // not a flow: cash sunk into a purchase two years ago is still sunk today, and
-  // a 1M window that hid it would answer "how much do I have in tickets?" with a
-  // number that's only ever too low. The label says so when a period is active.
+  // ── The two money-still-out figures ──
+  // Both are balances, not flows, so both run over EVERY row and ignore the
+  // period tabs: cash sunk into a purchase two years ago is still sunk today,
+  // and a payout owed since May is still owed. A window could only ever report
+  // them too low. `· all rows` marks them while a period is selected, so the
+  // stats that don't follow the tabs say so instead of looking broken.
   const invested = useMemo(() => openInvestment(tickets), [tickets]);
+  const awaiting = useMemo(() => awaitingPayout(tickets), [tickets]);
+  const allRows = period !== "all" && <span className="stat-caveat"> · all rows</span>;
 
   // Describe what the export contains, so the file's header line is honest about
   // whether it's everything or just the current search / period slice.
@@ -85,21 +86,22 @@ export default function EventsPage() {
             <div className={"value " + (problems > 0 ? "stat-problem" : "")}>{problems || "—"}</div>
           </div>
           <div className="stat"
-               title="Your own money still in tickets: unsold stock, plus sold rows whose payout hasn't landed. Ticking Paid on a row takes its cost out of this. Counts every row, not just the selected period.">
+               title="Your own money still in tickets, at cost: unsold stock, plus the cost of sold rows whose payout hasn't landed. Ticking Paid on a row takes its cost out. Counts every row, not just the selected period.">
             <div className="label">
               Invested now
-              {invested.unpriced > 0 && (
-                <span className="stat-caveat"> · {invested.unpriced} unpriced</span>
-              )}
-              {period !== "all" && invested.unpriced === 0 && (
-                <span className="stat-caveat"> · all rows</span>
-              )}
+              {invested.unpriced > 0
+                ? <span className="stat-caveat"> · {invested.unpriced} unpriced</span>
+                : allRows}
             </div>
             <div className="value">{invested.total > 0 ? `${invested.total.toFixed(0)} EUR` : "—"}</div>
           </div>
-          <div className="stat">
-            <div className="label">Awaiting payout</div>
-            <div className="value">{awaitingPayout > 0 ? `${awaitingPayout.toFixed(0)} EUR` : "—"}</div>
+          <div className="stat"
+               title="Revenue already earned that hasn't reached the bank — the sell price of every sold row not yet ticked Paid. Counts every row, not just the selected period.">
+            <div className="label">
+              Awaiting payout
+              {awaiting.count > 0 && <span className="stat-caveat"> · {awaiting.count} rows</span>}
+            </div>
+            <div className="value">{awaiting.total > 0 ? `${awaiting.total.toFixed(0)} EUR` : "—"}</div>
           </div>
           <div className="stat">
             <div className="label">
