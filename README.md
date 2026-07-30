@@ -150,6 +150,35 @@ price. The fixture file has that concert as a regression guard.
 If the essentials (order ref, event name, payout) are missing, the parser returns
 `null` and the mail is flagged for review rather than inserted.
 
+## Scanner: LA28 order extraction
+
+The Scanner normally reports mail *metadata* (who/when/subject/folder). Tick
+**Extract LA28 order details** and each matching mail is also read for the three
+things a purchase confirmation actually says — **event**, **ticket count**,
+**amount paid** — plus order #, event date and venue in the CSV. The parser is
+`lib/parsers/la28.ts`; it is **scanner-only** and writes nothing to the database.
+Buy prices still get typed in by hand (see the rule above); this just saves
+reading 50 mails by eye.
+
+Nothing about a sport, price or quantity is hard-coded — every field comes out of
+the mail — so the same scan handles 50 confirmations that are each a different
+event at a different price. Three traps it has to survive, all covered by
+fixtures in `parsers.test.ts`:
+
+- **The service fee repeats the ticket count.** `8 × $40.00` then `8 × $9.61`
+  sums to 16 tickets unless fee rows are excluded, which is done by label. That
+  also keeps a two-category order (`4 × B` + `2 × C` = 6) correct.
+- **`Subtotal` ends in "total".** Every total regex is anchored, and `Order
+  total` is preferred over the closing `Total` row.
+- **text and html parts both carry the same order.** They are concatenated for
+  phrase matching, but extraction reads only ONE part (`pickExtractSource`) —
+  otherwise every quantity doubles.
+
+`htmlToText` (now `lib/htmlText.ts`) turns block tags into **newlines** rather
+than spaces. These mails are nested tables; with everything on one line a
+label/value pair like `Venue:` / the address can't be told apart from the next
+cell. Wrapped values (`<br>` mid-address) are rejoined on the dangling comma.
+
 ## Two traps that only showed up when the poller actually ran
 
 Both typechecked, built, and looked correct on the page. Neither survived one

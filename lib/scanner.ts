@@ -1,5 +1,7 @@
 import { ImapFlow, type FetchMessageObject } from "imapflow";
 import { simpleParser } from "mailparser";
+import { parseLa28Order, type La28Order } from "./parsers/la28";
+import { htmlToText, pickExtractSource } from "./htmlText";
 
 // ─────────────────────────────────────────────────────────────
 // Generic mailbox scanner — the in-app port of the standalone SS Scraper.
@@ -25,6 +27,11 @@ export type ScanFilter = {
   matchAll?: boolean; // true = every phrase must be present; false = any one
   since?: string; // yyyy-mm-dd
   folders?: string[]; // raw folder paths to scan; empty = every selectable folder
+  // Pull structured fields out of each matching mail into extra result columns.
+  // A named format, not a boolean, so a second one can be added without changing
+  // the wire shape. Turning this on forces the (slower) body fetch even when no
+  // body phrases are set — there's nothing to parse from a header.
+  extract?: "la28";
 };
 
 export type ScanHit = {
@@ -38,6 +45,15 @@ export type ScanHit = {
   matched: string; // phrases actually found, joined by " || "
   messageId: string;
   uid: number;
+  // Present only when `extract` is set AND the mail parsed. Left undefined
+  // otherwise, so an unparsed row is visibly blank instead of a made-up zero.
+  event?: string;
+  eventDate?: string;
+  venue?: string;
+  qty?: number;
+  total?: number;
+  currency?: string;
+  orderRef?: string;
 };
 
 export type ScanCursor = { folderIdx: number; belowUid: number } | null;
@@ -89,15 +105,6 @@ function loose(s: string): string {
   return s.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
-function htmlToText(html: string): string {
-  return html
-    .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">");
-}
 
 function fmtDate(d: Date | null | undefined): string {
   if (!d) return "";
@@ -169,7 +176,8 @@ export async function scanChunk(filter: ScanFilter, cursor: ScanCursor): Promise
     .map((p) => ({ orig: p.trim(), needle: loose(p) }))
     .filter((p) => p.needle);
   const matchAll = filter.matchAll !== false;
-  const needBody = phrases.length > 0;
+  // Extraction needs the body too, even with zero phrases.
+  const needBody = phrases.length > 0 || !!filter.extract;
 
   const c = client();
   await c.connect();
@@ -220,6 +228,7 @@ export async function scanChunk(filter: ScanFilter, cursor: ScanCursor): Promise
           // 2) Body pass — only when phrases are set, BATCHED (one fetch per
           //    BODY_BATCH uids) instead of a round-trip per message.
           const bodyText = new Map<number, string>();
+          const extracted = new Map<number, La28Order>();
           if (needBody && matches.length) {
             const ids = matches.map((m) => m.uid);
             for (let j = 0; j < ids.length; j += BODY_BATCH) {
@@ -228,10 +237,17 @@ export async function scanChunk(filter: ScanFilter, cursor: ScanCursor): Promise
                 bodies++;
                 if (!msg.source) continue;
                 const parsed = await simpleParser(msg.source as Buffer);
-                bodyText.set(
-                  Number(msg.uid),
-                  (parsed.text || "") + "\n" + htmlToText(typeof parsed.html === "string" ? parsed.html : "")
-                );
+                const uid = Number(msg.uid);
+                const textPart = parsed.text || "";
+                const htmlPart = htmlToText(typeof parsed.html === "string" ? parsed.html : "");
+                bodyText.set(uid, textPart + "\n" + htmlPart);
+                if (filter.extract === "la28") {
+                  const order = parseLa28Order({
+                    subject: matches.find((m) => m.uid === uid)?.subject ?? "",
+                    body: pickExtractSource(textPart, htmlPart),
+                  });
+                  if (order) extracted.set(uid, order);
+                }
               }
             }
           }
@@ -247,6 +263,7 @@ export async function scanChunk(filter: ScanFilter, cursor: ScanCursor): Promise
               firstEmail(headerValue(m.hdr, "x-original-to")) ||
               firstEmail(headerValue(m.hdr, "envelope-to")) ||
               firstEmail(headerValue(m.hdr, "delivered-to"));
+            const order = extracted.get(m.uid);
             hits.push({
               recipient: recipient.toLowerCase(),
               deliveredTo: firstEmail(headerValue(m.hdr, "delivered-to")),
@@ -258,6 +275,14 @@ export async function scanChunk(filter: ScanFilter, cursor: ScanCursor): Promise
               matched,
               messageId: m.env?.messageId || "",
               uid: m.uid,
+              // Spread only the fields that parsed, so a mail the extractor
+              // didn't recognise leaves its cells empty rather than showing 0.
+              ...(order?.event ? { event: order.event } : {}),
+              ...(order?.eventDate ? { eventDate: order.eventDate } : {}),
+              ...(order?.venue ? { venue: order.venue } : {}),
+              ...(order?.qty != null ? { qty: order.qty } : {}),
+              ...(order?.total != null ? { total: order.total, currency: order.currency } : {}),
+              ...(order?.orderRef ? { orderRef: order.orderRef } : {}),
             });
           }
 

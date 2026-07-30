@@ -5,11 +5,16 @@ import { parseViagogo } from "./viagogo";
 import { parseSeatix } from "./seatix";
 import { classify } from "./classify";
 import { parseViagogoPayment, isViagogoPayment } from "./viagogoPayment";
+import { parseLa28Order, isLa28Order, parseLa28Date } from "./la28";
+import { htmlToText, pickExtractSource } from "../htmlText";
 import {
   SEATIX_SALE, VIAGOGO_SALE, VIAGOGO_CONCERT,
   VIAGOGO_SALE_V2, VIAGOGO_SALE_V2_SUBJECT,
   VIAGOGO_SALE_V3, VIAGOGO_SALE_V3_SUBJECT,
   VIAGOGO_PAYMENT, VIAGOGO_PAYMENT_SUBJECT, asEmail,
+  LA28_CRICKET, LA28_CRICKET_SUBJECT, LA28_CRICKET_HTML,
+  LA28_ATHLETICS, LA28_ATHLETICS_SUBJECT,
+  LA28_MULTI, LA28_MULTI_SUBJECT,
 } from "./__fixtures__/real-emails";
 
 let failed = 0;
@@ -108,6 +113,70 @@ check("item[1] event", pay?.items[1].eventName, "Norway vs England - World Cup -
 check("item[1] amount", pay?.items[1].amount, 2004.12);
 check("item[2] amount", pay?.items[2].amount, 1687.68);
 check("a sale email is NOT a payment", isViagogoPayment(asEmail(VIAGOGO_SALE)), false);
+
+console.log("\nparseLa28Order() — table layout (label and value on separate lines)");
+const la = parseLa28Order({ subject: LA28_CRICKET_SUBJECT, body: LA28_CRICKET });
+check("recognised", la !== null, true);
+check("orderRef", la?.orderRef, "391532671");
+check("event", la?.event, "CKT27 Cricket Men's Bronze Medal");
+check("qty (8, not 16 — the service fee repeats the count)", la?.qty, 8);
+check("total (order total, not the 320.00 subtotal)", la?.total, 396.88);
+check("currency", la?.currency, "USD");
+check("eventDate (MM.DD.YYYY → ISO)", la?.eventDate, "2028-07-28");
+check("venue", la?.venue, "Fairgrounds Cricket Stadium, 1101 W McKinley Ave, POMONA, CA 91768");
+check("items", la?.items, 1);
+
+console.log("\nparseLa28Order() — different sport / price / qty, inline layout");
+const lb = parseLa28Order({ subject: LA28_ATHLETICS_SUBJECT, body: LA28_ATHLETICS });
+check("recognised", lb !== null, true);
+check("orderRef", lb?.orderRef, "402118934");
+check("event", lb?.event, "ATH14 Athletics Women's 100m Final");
+check("qty", lb?.qty, 2);
+check("total (thousands separator)", lb?.total, 1240.5);
+check("eventDate", lb?.eventDate, "2028-08-05");
+check("venue", lb?.venue, "Los Angeles Memorial Coliseum, 3911 S Figueroa St, LOS ANGELES, CA 90037");
+
+console.log("\nparseLa28Order() — one order, two events, two categories");
+const lc = parseLa28Order({ subject: LA28_MULTI_SUBJECT, body: LA28_MULTI });
+check("both events", lc?.event, "SWM03 Swimming Men's 200m Butterfly Final + BSK09 Basketball Women's Quarterfinal");
+check("items", lc?.items, 2);
+check("qty summed across categories, fees excluded", lc?.qty, 6);
+check("total", lc?.total, 2013);
+check("eventDate is the first item's", lc?.eventDate, "2028-07-24");
+
+console.log("\nparseLa28Order() — the production path: real HTML → htmlToText → parser");
+const lh = parseLa28Order({
+  subject: LA28_CRICKET_SUBJECT,
+  body: pickExtractSource("", htmlToText(LA28_CRICKET_HTML)),
+});
+check("recognised", lh !== null, true);
+check("orderRef", lh?.orderRef, "391532671");
+check("event (not the duplicate in the img alt)", lh?.event, "CKT27 Cricket Men's Bronze Medal");
+check("items (alt text must not count as a second event)", lh?.items, 1);
+check("qty", lh?.qty, 8);
+check("total", lh?.total, 396.88);
+check("currency", lh?.currency, "USD");
+check("eventDate", lh?.eventDate, "2028-07-28");
+check("venue (rejoined across the <br>)", lh?.venue,
+  "Fairgrounds Cricket Stadium, 1101 W McKinley Ave, POMONA, CA 91768");
+// Both parts present is the normal MIME case; extraction must read one of them.
+check("text+html both present → still 8 tickets, not 16", parseLa28Order({
+  subject: LA28_CRICKET_SUBJECT,
+  body: pickExtractSource(LA28_CRICKET, htmlToText(LA28_CRICKET_HTML)),
+})?.qty, 8);
+
+console.log("\nparseLa28Order() — guards");
+check("order # survives an image-only body", parseLa28Order({
+  subject: LA28_CRICKET_SUBJECT,
+  body: "LA28 Order number: Order details Venue: TBC",
+})?.orderRef, "391532671");
+check("a viagogo sale is not an LA28 order", parseLa28Order({ subject: "", body: VIAGOGO_SALE }), null);
+check("isLa28Order on a seatix mail → false", isLa28Order("", SEATIX_SALE), false);
+// 07.09.2028 is ambiguous: Jul 9 2028 is a Sunday, Sep 7 2028 is a Thursday.
+check("month-first when the weekday agrees", parseLa28Date("Sun, 07.09.2028, 09:00"), "2028-07-09");
+check("weekday overrides month-first when it disagrees", parseLa28Date("Thu, 07.09.2028"), "2028-09-07");
+check("no weekday → month-first (US sender)", parseLa28Date("07.09.2028"), "2028-07-09");
+check("day > 12 needs no weekday", parseLa28Date("07.28.2028"), "2028-07-28");
 
 console.log("\nCross-parser: neither parser may claim the other's email");
 check("viagogo parser on seatix mail → null", parseViagogo(asEmail(SEATIX_SALE)), null);

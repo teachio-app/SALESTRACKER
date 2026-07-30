@@ -19,11 +19,18 @@ type ScanChunk = {
 
 const MAX_ROWS = 2000; // cap the DOM; the CSV still gets everything
 
+/** Did the extractor get anything out of this hit? */
+const extracted = (h: ScanHit) => h.event != null || h.qty != null || h.total != null;
+
 export default function ScannerPage() {
   const [subject, setSubject] = useState("");
   const [phrases, setPhrases] = useState("");
   const [matchAll, setMatchAll] = useState(true);
   const [since, setSince] = useState("");
+  // Opt-in: pull event / qty / total out of each LA28 order confirmation into
+  // extra columns. Off by default because it forces a full body fetch per
+  // subject match, which is the slow part of a scan.
+  const [extractLa28, setExtractLa28] = useState(false);
   const [folders, setFolders] = useState<FolderInfo[]>([]);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [foldersBusy, setFoldersBusy] = useState(false);
@@ -69,6 +76,7 @@ export default function ScannerPage() {
       matchAll,
       since: since || undefined,
       folders: picked.size ? [...picked] : undefined,
+      extract: extractLa28 ? ("la28" as const) : undefined,
     };
   }
 
@@ -153,9 +161,24 @@ export default function ScannerPage() {
     const q = search.trim().toLowerCase();
     if (!q) return hits;
     return hits.filter((h) =>
-      `${h.recipient} ${h.deliveredTo} ${h.sender} ${h.subject} ${h.folder} ${h.matched}`.toLowerCase().includes(q)
+      `${h.recipient} ${h.deliveredTo} ${h.sender} ${h.subject} ${h.folder} ${h.matched} ${h.event ?? ""}`
+        .toLowerCase().includes(q)
     );
   }, [hits, search]);
+
+  const anyExtracted = useMemo(() => hits.some(extracted), [hits]);
+  // With ~50 order confirmations the useful question is "how many tickets and
+  // how much did they cost in total", so total them up over what's on screen.
+  const sums = useMemo(() => {
+    const rows = shown.filter(extracted);
+    const cur = new Set(rows.map((h) => h.currency).filter(Boolean));
+    return {
+      rows: rows.length,
+      qty: rows.reduce((s, h) => s + (h.qty ?? 0), 0),
+      total: rows.reduce((s, h) => s + (h.total ?? 0), 0),
+      currency: cur.size === 1 ? [...cur][0]! : cur.size ? "mixed" : "",
+    };
+  }, [shown]);
 
   function hitsToCsv(rows: ScanHit[]): string {
     const cols: [string, (h: ScanHit) => string][] = [
@@ -170,6 +193,21 @@ export default function ScannerPage() {
       ["message_id", (h) => h.messageId],
       ["uid", (h) => String(h.uid)],
     ];
+    // Extracted columns are appended only when the scan actually extracted
+    // something, so a plain scan's CSV keeps the shape it always had.
+    if (rows.some(extracted)) {
+      cols.push(
+        ["event", (h) => h.event ?? ""],
+        ["qty", (h) => (h.qty != null ? String(h.qty) : "")],
+        // Bare number: a spreadsheet must be able to SUM the column, so the
+        // currency lives in its own cell rather than glued to the amount.
+        ["total", (h) => (h.total != null ? h.total.toFixed(2) : "")],
+        ["currency", (h) => h.currency ?? ""],
+        ["order_ref", (h) => h.orderRef ?? ""],
+        ["event_date", (h) => h.eventDate ?? ""],
+        ["venue", (h) => h.venue ?? ""]
+      );
+    }
     const cell = (s: string) => (/[",\n\r;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
     const head = cols.map((c) => c[0]).join(";");
     const out = rows.map((h) => cols.map((c) => cell(c[1](h))).join(";"));
@@ -186,6 +224,7 @@ export default function ScannerPage() {
     if (subject.trim()) parts.push(`Subject "${subject.trim()}"`);
     const ph = phrases.split("\n").map((s) => s.trim()).filter(Boolean);
     if (ph.length) parts.push(`${ph.length} phrase(s) (${matchAll ? "all" : "any"})`);
+    if (extractLa28) parts.push("LA28 details extracted");
     if (since) parts.push(`since ${since}`);
     parts.push(picked.size ? `${picked.size} folder(s)` : "all folders");
     return parts.join(" · ");
@@ -253,6 +292,16 @@ export default function ScannerPage() {
               <label className="scan-label">Only since</label>
               <input type="date" value={since} onChange={(e) => setSince(e.target.value)} />
             </div>
+          </div>
+
+          <label className="scan-check" style={{ marginTop: 12 }}>
+            <input type="checkbox" checked={extractLa28}
+                   onChange={(e) => setExtractLa28(e.target.checked)} />
+            <span>Extract LA28 order details (event · qty · total)</span>
+          </label>
+          <div className="hint">
+            Reads each matching mail and pulls out the event, the ticket count and what was paid — different
+            sport and price per mail, all read from the mail itself. Slower: it has to open every match.
           </div>
 
           <div className="scan-folders">
@@ -328,6 +377,27 @@ export default function ScannerPage() {
           <div className="scan-status">
             <div className="stat"><div className="label">Matches</div><div className="value">{hits.length}</div></div>
             <div className="stat"><div className="label">Scanned</div><div className="value">{scanned}</div></div>
+            {anyExtracted && (
+              <>
+                {/* Say outright how many mails the extractor could read. If 3 of
+                    50 didn't parse, the totals below are short by 3 and you need
+                    to know that, not discover it in the spreadsheet. */}
+                <div className="stat">
+                  <div className="label">
+                    Extracted
+                    {sums.rows < shown.length && (
+                      <span className="stat-caveat"> · {shown.length - sums.rows} unread</span>
+                    )}
+                  </div>
+                  <div className="value">{sums.rows}/{shown.length}</div>
+                </div>
+                <div className="stat"><div className="label">Tickets</div><div className="value">{sums.qty}</div></div>
+                <div className="stat">
+                  <div className="label">Spent</div>
+                  <div className="value">{sums.total.toFixed(2)} {sums.currency}</div>
+                </div>
+              </>
+            )}
             <div className="scan-progress">{scanning ? progress || "Scanning…" : progress}</div>
           </div>
 
@@ -344,12 +414,19 @@ export default function ScannerPage() {
               <thead>
                 <tr>
                   <th>Recipient</th><th>Delivered to</th><th>Sender</th><th>Subject</th>
-                  <th>Date</th><th>Folder</th><th>Matched</th>
+                  <th>Date</th><th>Folder</th>
+                  {/* The three extracted columns replace "Matched" while
+                      extracting — with no phrases set, Matched is always empty. */}
+                  {anyExtracted ? (
+                    <><th>Event</th><th className="amount-col">Qty</th><th className="amount-col">Total</th></>
+                  ) : (
+                    <th>Matched</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
                 {shown.length === 0 ? (
-                  <tr><td colSpan={7} className="empty" style={{ padding: 24 }}>
+                  <tr><td colSpan={anyExtracted ? 9 : 7} className="empty" style={{ padding: 24 }}>
                     {scanning ? "Scanning…" : "No results yet. Set a filter and hit Scan."}
                   </td></tr>
                 ) : (
@@ -361,7 +438,22 @@ export default function ScannerPage() {
                       <td className="scan-subj" title={h.subject}>{h.subject}</td>
                       <td className="nums date-cell">{h.date}</td>
                       <td>{h.folder}</td>
-                      <td className="scan-matched" title={h.matched}>{h.matched}</td>
+                      {anyExtracted ? (
+                        <>
+                          <td className="scan-subj" title={h.event ?? ""}>
+                            {h.event ?? <span className="unknown">—</span>}
+                            {h.eventDate && <div className="entry-sub">{h.eventDate}</div>}
+                          </td>
+                          <td className="nums amount-col">{h.qty ?? <span className="unknown">—</span>}</td>
+                          <td className="nums amount-col">
+                            {h.total != null
+                              ? `${h.total.toFixed(2)} ${h.currency ?? ""}`.trim()
+                              : <span className="unknown">—</span>}
+                          </td>
+                        </>
+                      ) : (
+                        <td className="scan-matched" title={h.matched}>{h.matched}</td>
+                      )}
                     </tr>
                   ))
                 )}

@@ -166,3 +166,157 @@ Copyright © 2026 viagogo. All rights reserved`;
 export function asEmail(text: string, subject = "") {
   return { from: "catchall@thevortex.beauty", subject, text, html: "", date: new Date() };
 }
+
+// ── LA28 order confirmations (purchases, read by the Scanner) ──────────
+// There are ~50 of these in the mailbox and every one is a different sport,
+// price and ticket count, so the fixtures below deliberately vary all three.
+// Nothing about a sport, an amount or a quantity may be hard-coded in la28.ts —
+// these exist to prove that.
+//
+// LA28_CRICKET is the real mail, flattened the way scanner.ts's htmlToText()
+// renders its nested tables: every table cell on its own line, so a label and
+// its value end up on CONSECUTIVE lines.
+export const LA28_CRICKET_SUBJECT = "LA28 - Olympic Tickets Order Confirmation - 391532671";
+export const LA28_CRICKET = `LA28
+Thank you for your purchase. It's official—your ticket order for the LA28 Olympic Games is confirmed.
+We'll send you detailed instructions on how to access your tickets digitally as we get closer to the Games.
+YOUR ORDER
+Order number:
+391532671
+Billing address:
+Pablo Beatty
+Postmaster
+Orland Indiana 46776-9564
+United States of America
+Order date:
+07.29.2026
+Order total:
+$396.88
+Ticket delivery method:
+Digital
+Payment method:
+VISA
+ORDER DETAILS
+CKT27 Cricket Men's Bronze Medal
+Date:
+Fri, 07.28.2028, 09:00 Local Time (24-hour)
+Venue:
+Fairgrounds Cricket Stadium, 1101 W McKinley Ave, POMONA, CA 91768
+Category D, Standard
+8 × $40.00
+$320.00
+Service fee
+8 × $9.61
+$76.88
+Subtotal
+$396.88
+TOTAL
+Digital delivery fee
+$0.00
+Total
+$396.88`;
+
+// The same order as HTML, laid out the way the real mail is: nested tables, the
+// label and its value in SEPARATE cells, the event title also sitting in an
+// <img alt>, and "×" as the &times; entity. This is the fixture that proves the
+// production path works — htmlToText() feeds the parser, not hand-written text.
+export const LA28_CRICKET_HTML = `<html><body>
+<table><tr><td><img src="cid:logo" alt="LA28"></td></tr>
+<tr><td><p>Thank you for your purchase. It's official&mdash;your ticket order for the LA28 Olympic Games is confirmed.</p></td></tr></table>
+<h3>YOUR ORDER</h3>
+<table>
+  <tr>
+    <td><span>Order number:</span><br><strong>391532671</strong></td>
+    <td><span>Billing address:</span><br><strong>Pablo Beatty<br>Postmaster<br>Orland Indiana 46776-9564</strong></td>
+  </tr>
+  <tr><td><span>Order date:</span><br><strong>07.29.2026</strong></td></tr>
+  <tr><td><span>Order total:</span><br><strong>$396.88</strong></td></tr>
+  <tr><td><span>Ticket delivery method:</span><br><strong>Digital</strong></td></tr>
+  <tr><td><span>Payment method:</span><br><strong>VISA</strong></td></tr>
+</table>
+<h3>ORDER DETAILS</h3>
+<table>
+  <tr>
+    <td><img src="cid:evt" alt="CKT27 Cricket Men&apos;s Bronze Medal"></td>
+    <td>
+      <div><strong>CKT27 Cricket Men&apos;s Bronze Medal</strong></div>
+      <table>
+        <tr><td>Date:</td><td>Fri, 07.28.2028, 09:00 Local Time (24-hour)</td></tr>
+        <tr><td>Venue:</td><td>Fairgrounds Cricket Stadium, 1101 W McKinley Ave,<br>POMONA, CA 91768</td></tr>
+      </table>
+    </td>
+  </tr>
+  <tr><td>Category D, Standard</td><td>8 &times; $40.00</td><td>$320.00</td></tr>
+  <tr><td>Service fee</td><td>8 &times; $9.61</td><td>$76.88</td></tr>
+  <tr><td><strong>Subtotal</strong></td><td></td><td><strong>$396.88</strong></td></tr>
+</table>
+<h3>TOTAL</h3>
+<table>
+  <tr><td>Digital delivery fee</td><td>$0.00</td></tr>
+  <tr><td><strong>Total</strong></td><td><strong>$396.88</strong></td></tr>
+</table>
+</body></html>`;
+
+// A different sport, price and quantity — and the plain-text variant, where each
+// label sits on the SAME line as its value. Both layouts must parse.
+export const LA28_ATHLETICS_SUBJECT = "LA28 - Olympic Tickets Order Confirmation - 402118934";
+export const LA28_ATHLETICS = `LA28
+Thank you for your purchase.
+YOUR ORDER
+Order number: 402118934
+Order date: 08.03.2026
+Order total: $1,240.50
+Payment method: VISA
+ORDER DETAILS
+ATH14 Athletics Women's 100m Final
+Date: Sat, 08.05.2028, 19:30 Local Time (24-hour)
+Venue: Los Angeles Memorial Coliseum, 3911 S Figueroa St, LOS ANGELES, CA 90037
+Category A, Standard   2 × $575.00   $1,150.00
+Service fee            2 × $45.25    $90.50
+Subtotal                             $1,240.50
+TOTAL
+Total   $1,240.50`;
+
+// One order, two events and two price categories: qty must be 6 (4 + 2), not 12
+// — the service-fee lines repeat the same counts.
+export const LA28_MULTI_SUBJECT = "LA28 - Olympic Tickets Order Confirmation - 415900277";
+export const LA28_MULTI = `LA28
+YOUR ORDER
+Order number:
+415900277
+Order date:
+08.11.2026
+Order total:
+$2,013.00
+ORDER DETAILS
+SWM03 Swimming Men's 200m Butterfly Final
+Date:
+Mon, 07.24.2028, 10:15 Local Time (24-hour)
+Venue:
+SoFi Stadium, 1001 Stadium Dr, INGLEWOOD, CA 90301
+Category B, Standard
+4 × $310.00
+$1,240.00
+Service fee
+4 × $28.00
+$112.00
+Subtotal
+$1,352.00
+BSK09 Basketball Women's Quarterfinal
+Date:
+Tue, 07.25.2028, 21:00 Local Time (24-hour)
+Venue:
+Intuit Dome, 3930 W Century Blvd, INGLEWOOD, CA 90303
+Category C, Standard
+2 × $300.00
+$600.00
+Service fee
+2 × $30.50
+$61.00
+Subtotal
+$661.00
+TOTAL
+Digital delivery fee
+$0.00
+Total
+$2,013.00`;
