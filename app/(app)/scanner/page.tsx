@@ -29,7 +29,9 @@ export default function ScannerPage() {
   const [since, setSince] = useState("");
   // Opt-in: pull event / qty / total out of each LA28 order confirmation into
   // extra columns. Off by default because it forces a full body fetch per
-  // subject match, which is the slow part of a scan.
+  // subject match, which is the slow part of a scan. Lives in the collapsed
+  // "Order extraction" settings and is remembered in localStorage, like the
+  // webhook settings below.
   const [extractLa28, setExtractLa28] = useState(false);
   const [folders, setFolders] = useState<FolderInfo[]>([]);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -57,6 +59,9 @@ export default function ScannerPage() {
       setHookMention(localStorage.getItem("scan_hook_mention") || "");
       setHookOnFinish(localStorage.getItem("scan_hook_finish") !== "0");
       setHookAttachCsv(localStorage.getItem("scan_hook_csv") !== "0");
+      // Defaults OFF (=== "1", not !== "0"): extraction costs a body fetch per
+      // match, so it stays something you switched on deliberately.
+      setExtractLa28(localStorage.getItem("scan_extract_la28") === "1");
     } catch {
       /* localStorage blocked — just use defaults */
     }
@@ -294,16 +299,6 @@ export default function ScannerPage() {
             </div>
           </div>
 
-          <label className="scan-check" style={{ marginTop: 12 }}>
-            <input type="checkbox" checked={extractLa28}
-                   onChange={(e) => setExtractLa28(e.target.checked)} />
-            <span>Extract LA28 order details (event · qty · total)</span>
-          </label>
-          <div className="hint">
-            Reads each matching mail and pulls out the event, the ticket count and what was paid — different
-            sport and price per mail, all read from the mail itself. Slower: it has to open every match.
-          </div>
-
           <div className="scan-folders">
             <div className="scan-folders-head">
               <span className="scan-label" style={{ margin: 0 }}>Folders</span>
@@ -331,6 +326,32 @@ export default function ScannerPage() {
             )}
             <div className="hint">Nothing ticked = every folder except trash/junk.</div>
           </div>
+
+          {/* Tucked into a disclosure like the webhook settings: it's a rarely
+              changed option, so it shouldn't sit in the filter panel shouting.
+              The summary still states on/off, because a hidden switch that
+              silently slows every scan would be worse than a visible one. */}
+          <details className="scan-hook">
+            <summary>
+              Order extraction{" "}
+              <span className="scan-hook-sub">· {extractLa28 ? "LA28 details on" : "off"}</span>
+            </summary>
+            <div className="scan-hook-body">
+              <label className="scan-check" style={{ marginTop: 0 }}>
+                <input type="checkbox" checked={extractLa28}
+                       onChange={(e) => {
+                         setExtractLa28(e.target.checked);
+                         persist("scan_extract_la28", e.target.checked ? "1" : "0");
+                       }} />
+                <span>Extract LA28 order details (event · qty · total)</span>
+              </label>
+              <div className="hint">
+                Reads each matching mail and pulls out the event, the ticket count and what was paid — a
+                different sport and price in every mail, all taken from the mail itself. Slower: it has to
+                open every match, not just its header.
+              </div>
+            </div>
+          </details>
 
           <details className="scan-hook">
             <summary>
