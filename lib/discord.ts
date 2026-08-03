@@ -123,6 +123,74 @@ export async function notifyScan(opts: {
   }
 }
 
+// ── Seatix sale alert (standalone module) ─────────────────────────────
+// Its own webhook, its own channel, its own role ping — see
+// app/api/cron/seatix-alert/route.ts. Nothing here touches the dashboard or the
+// tickets table; it is a mail→Discord relay and nothing else.
+//
+// A ROLE is mentioned as `<@&id>`. The user syntax `<@id>` renders as a dead
+// grey "@unknown-user" and pings nobody — the single easiest thing to get wrong
+// here, hence the test in lib/discord.test.ts.
+//
+// allowed_mentions is the second half: `parse: []` blocks @everyone and every
+// stray mention the embed text might contain, and `roles: [id]` re-permits
+// exactly the one role we mean. Without it a webhook can be turned into an
+// @everyone megaphone by anything that lands in an event name.
+export function seatixAlertPayload(
+  sale: ParsedSale,
+  roleId?: string
+): Record<string, unknown> {
+  const seat = [
+    sale.section && `Section ${sale.section}`,
+    sale.seatRow && `Row ${sale.seatRow}`,
+    sale.seats && `Seats ${sale.seats}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  const embed = {
+    title: `🎟️ Seatix sale — ${sale.eventName}`,
+    color: 0x0ca30c,
+    fields: [
+      { name: "Payout", value: `${sale.sellPrice.toFixed(2)} ${sale.currency}`, inline: true },
+      { name: "Qty", value: String(sale.qty), inline: true },
+      ...(sale.eventDate ? [{ name: "Event date", value: sale.eventDate, inline: true }] : []),
+      ...(seat ? [{ name: "Seat", value: seat, inline: false }] : []),
+      ...(sale.location ? [{ name: "Venue", value: sale.location, inline: false }] : []),
+      ...(sale.faceValue != null
+        ? [{ name: "Face value", value: `${sale.faceValue.toFixed(2)} ${sale.currency}`, inline: true }]
+        : []),
+    ],
+    timestamp: new Date().toISOString(),
+  };
+
+  return {
+    ...(roleId ? { content: `<@&${roleId}>`, allowed_mentions: { parse: [], roles: [roleId] } } : {}),
+    embeds: [embed],
+  };
+}
+
+/** Post one Seatix sale to the standalone alert webhook. */
+export async function notifySeatixSale(sale: ParsedSale): Promise<boolean> {
+  const url = process.env.SEATIX_WEBHOOK_URL;
+  if (!url) return false;
+  const payload = seatixAlertPayload(sale, process.env.SEATIX_ROLE_ID);
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) console.error("Seatix alert webhook returned", res.status);
+    return res.ok;
+  } catch (err) {
+    // A Discord hiccup must never break the run — the watermark decides what
+    // gets retried, not this.
+    console.error("Seatix alert failed:", err);
+    return false;
+  }
+}
+
 // Payout notification — a separate webhook (DISCORD_PAYMENT_WEBHOOK_URL) so
 // "money landed" pings can go to their own channel, apart from sale alerts.
 export async function notifyPayment(payment: ViagogoPayment, markedPaid = 0): Promise<void> {

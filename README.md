@@ -228,6 +228,54 @@ predicate — which PostgREST's upsert never does. Every insert failed. The poll
 now does a plain `insert` and treats `23505` as "already have it". Don't convert
 it back to `.upsert(..., { onConflict: "external_id" })`.
 
+## The Seatix alert module (standalone)
+
+`/api/cron/seatix-alert` is a mail→Discord relay and nothing else: it reads new
+mail, keeps only what `parseSeatix` recognises, and posts each sale to its **own**
+webhook (`SEATIX_WEBHOOK_URL`) tagging a **role** (`SEATIX_ROLE_ID`).
+
+It is deliberately separate from the dashboard:
+
+| | |
+|---|---|
+| **UI** | none. A route handler never reaches the client bundle, so the dashboard doesn't grow by a byte and never waits on it. |
+| **Database** | writes nothing to `tickets`. No rows, no seat matching, no review queue — the sale poller owns all of that and is untouched. |
+| **State** | one row in `poll_state` under its own key, `INBOX@seatix-alert`. No migration: that table is keyed by name, so the row appears on first run. |
+
+**Its own watermark is the whole trick.** A watermark records where *one reader*
+got to. Two readers on the same INBOX sharing a row would consume each other's
+mail — whichever ran first would advance past a message and hide it from the
+other forever. `fetchNewEmails({ stateKey })` takes the key; omitting it keeps
+the sale poller on the exact row it has always used.
+
+Both alerts fire for a Seatix sale — the poller's to `DISCORD_WEBHOOK_URL`, this
+one to `SEATIX_WEBHOOK_URL` with the role ping. That's the point: different
+channel, different audience.
+
+A role is mentioned as **`<@&id>`**. The user syntax `<@id>` renders as a dead
+grey mention and pings nobody, and `allowed_mentions: { parse: [], roles: [id] }`
+is what stops an event name containing `@everyone` from turning the webhook into
+a megaphone. Both halves are pinned in `lib/discord.test.ts`.
+
+Setup:
+
+1. Set `SEATIX_WEBHOOK_URL` and `SEATIX_ROLE_ID` in Vercel → Environment
+   Variables. (Role ID: Server Settings → Roles → right-click → Copy Role ID,
+   with Developer Mode on.)
+2. Verify without waiting for a sale:
+   `curl -H "Authorization: Bearer <CRON_SECRET>" "https://<app>.vercel.app/api/cron/seatix-alert?test=1"`
+   — posts a sample alert, reads no mail, moves no watermark.
+3. Add a **second** cron-job.org job pointing at
+   `/api/cron/seatix-alert` with the same `Authorization: Bearer <CRON_SECRET>`
+   header. It is deliberately not in `vercel.json`: Hobby cron fires once a day,
+   useless for a sale alert, and a second entry would only risk the plan's cron
+   limit on every deploy.
+
+Missing `SEATIX_WEBHOOK_URL` → the endpoint returns **503 and reads no mail**,
+rather than quietly advancing its watermark past sales nobody was told about.
+A failed Discord post holds the watermark too, so an outage delays alerts
+instead of losing them.
+
 ## Deploy & scheduling
 
 ### Cron auth (this is settled, don't second-guess it)

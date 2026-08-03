@@ -23,6 +23,15 @@ import { supabaseAdmin } from "./supabase";
 
 const MAILBOX = "INBOX";
 
+// Each consumer of the mailbox keeps its OWN watermark row, because a watermark
+// records "where THIS reader got to". The sale poller and the Seatix alerter
+// read the same INBOX for different reasons and must not consume each other's
+// mail — one advancing past a message would silently hide it from the other.
+//
+// The default is the bare mailbox name, unchanged, so the existing poller keeps
+// using the row it has been writing since day one.
+const DEFAULT_STATE_KEY = MAILBOX;
+
 // A safety rail: however far behind the watermark is, never pull more than this
 // in one run.
 //
@@ -36,20 +45,20 @@ const MAX_PER_RUN = 15;
 
 type Watermark = { uid_validity: number; last_uid: number };
 
-async function readWatermark(): Promise<Watermark | null> {
+async function readWatermark(key: string): Promise<Watermark | null> {
   const db = supabaseAdmin();
   const { data } = await db
     .from("poll_state")
     .select("uid_validity,last_uid")
-    .eq("mailbox", MAILBOX)
+    .eq("mailbox", key)
     .maybeSingle();
   return data ?? null;
 }
 
-async function writeWatermark(uidValidity: number, lastUid: number): Promise<void> {
+async function writeWatermark(key: string, uidValidity: number, lastUid: number): Promise<void> {
   const db = supabaseAdmin();
   await db.from("poll_state").upsert(
-    { mailbox: MAILBOX, uid_validity: uidValidity, last_uid: lastUid, updated_at: new Date().toISOString() },
+    { mailbox: key, uid_validity: uidValidity, last_uid: lastUid, updated_at: new Date().toISOString() },
     { onConflict: "mailbox" }
   );
 }
@@ -61,7 +70,16 @@ export type FetchResult = {
   info: string;
 };
 
-export async function fetchNewEmails(): Promise<FetchResult> {
+export type FetchOptions = {
+  /** Which watermark row to use. Omit for the sale poller's original one. */
+  stateKey?: string;
+  /** Override the per-run cap — a reader that only parses can afford more. */
+  maxPerRun?: number;
+};
+
+export async function fetchNewEmails(opts: FetchOptions = {}): Promise<FetchResult> {
+  const stateKey = opts.stateKey || DEFAULT_STATE_KEY;
+  const maxPerRun = opts.maxPerRun ?? MAX_PER_RUN;
   const client = new ImapFlow({
     host: process.env.IMAP_HOST || "imappro.zoho.eu",
     port: Number(process.env.IMAP_PORT || 993),
@@ -87,7 +105,7 @@ export async function fetchNewEmails(): Promise<FetchResult> {
     uidValidity = Number(box.uidValidity);
     const uidNext = Number(box.uidNext);
 
-    const mark = await readWatermark();
+    const mark = await readWatermark(stateKey);
 
     // No watermark, or the server renumbered the mailbox → adopt the current
     // position and process nothing this run.
@@ -97,7 +115,7 @@ export async function fetchNewEmails(): Promise<FetchResult> {
       info = mark
         ? `uidvalidity changed (${mark.uid_validity} → ${uidValidity}); watermark reset to ${start}`
         : `first run; watermark set to ${start}, nothing backfilled`;
-      await writeWatermark(uidValidity, start);
+      await writeWatermark(stateKey, uidValidity, start);
       return { emails: [], commit: async () => {}, info };
     }
 
@@ -106,7 +124,7 @@ export async function fetchNewEmails(): Promise<FetchResult> {
       return { emails: [], commit: async () => {}, info: "no new mail" };
     }
 
-    const to = Math.min(uidNext - 1, mark.last_uid + MAX_PER_RUN);
+    const to = Math.min(uidNext - 1, mark.last_uid + maxPerRun);
     highestSeen = mark.last_uid;
 
     for await (const msg of client.fetch(`${from}:${to}`, { source: true, uid: true }, { uid: true })) {
@@ -137,7 +155,7 @@ export async function fetchNewEmails(): Promise<FetchResult> {
   // it here would drop mail on the floor if the insert failed afterwards.
   return {
     emails,
-    commit: () => writeWatermark(uidValidity, highestSeen),
+    commit: () => writeWatermark(stateKey, uidValidity, highestSeen),
     info,
   };
 }
