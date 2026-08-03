@@ -161,7 +161,17 @@ export async function GET(req: Request) {
   if (!failed) await commit();
   else console.warn("Failures this run — watermark held; the batch will be retried.");
 
-  return NextResponse.json({ ...stats, committed: !failed });
+  // Which notifiers are actually wired up in THIS environment. Booleans only,
+  // never the URLs. notifyDiscord() returns silently when its env var is
+  // missing, which is indistinguishable from "no sale happened" — and that is
+  // the first thing worth ruling out when an alert doesn't arrive.
+  const notifiers = {
+    sales: !!process.env.DISCORD_WEBHOOK_URL,
+    payments: !!process.env.DISCORD_PAYMENT_WEBHOOK_URL,
+    seatixAlert: !!process.env.SEATIX_WEBHOOK_URL,
+  };
+
+  return NextResponse.json({ ...stats, committed: !failed, notifiers });
 }
 
 function hashSubject(email: { subject: string; date: Date }): string {

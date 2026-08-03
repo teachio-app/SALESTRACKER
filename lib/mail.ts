@@ -2,6 +2,7 @@ import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
 import { RawEmail } from "./parsers";
 import { supabaseAdmin } from "./supabase";
+import { isBulkNoise } from "./mailNoise";
 
 // ─────────────────────────────────────────────────────────────
 // Reads new mail WITHOUT changing anything about the mailbox.
@@ -32,16 +33,21 @@ const MAILBOX = "INBOX";
 // using the row it has been writing since day one.
 const DEFAULT_STATE_KEY = MAILBOX;
 
-// A safety rail: however far behind the watermark is, never pull more than this
-// in one run.
+// ── Two-phase read ────────────────────────────────────────────────────
+// Bodies are expensive: pulling a full source off Zoho and running it through
+// mailparser clocks ~2s, so only 15 fit in the 60s function budget. Envelopes
+// are not: 1,732 of them came back in 3.6 seconds on this same account.
 //
-// Sized from a measurement, not a guess: pulling full message sources off Zoho
-// and running them through mailparser clocked ~2s each on this account (60
-// messages took just over two minutes). The Vercel function's budget is 60s, so
-// 40 per run — the first number here — would have been cut off mid-batch. 15
-// leaves room to spare. Cron runs every 5 min, so this still clears 180/hour;
-// a backlog just drains over a few runs, and the watermark makes that safe.
-const MAX_PER_RUN = 15;
+// The old single-phase read downloaded every body in UID order and so managed
+// ~180 messages an hour. This mailbox receives about a THOUSAND an hour, almost
+// all of it relayed bot noise, so the poller fell further behind every hour and
+// simply never reached a sale. Scanning envelopes first and paying for bodies
+// only where a sale could plausibly be turns that around completely.
+const ENVELOPE_WINDOW = 4000; // UIDs whose envelopes one run may scan
+const ENVELOPE_BATCH = 1000;  // per FETCH command
+const MAX_BODIES = 15;        // full sources per run — unchanged, still the cap that matters
+// Leave the rest of the 60s budget for parsing and for the caller's own work.
+const ENVELOPE_MS = 20_000;
 
 type Watermark = { uid_validity: number; last_uid: number };
 
@@ -84,13 +90,14 @@ export type FetchResult = {
 export type FetchOptions = {
   /** Which watermark row to use. Omit for the sale poller's original one. */
   stateKey?: string;
-  /** Override the per-run cap — a reader that only parses can afford more. */
+  /** Override the per-run body cap — a reader that only parses can afford more. */
   maxPerRun?: number;
 };
 
 export async function fetchNewEmails(opts: FetchOptions = {}): Promise<FetchResult> {
   const stateKey = opts.stateKey || DEFAULT_STATE_KEY;
-  const maxPerRun = opts.maxPerRun ?? MAX_PER_RUN;
+  const maxBodies = opts.maxPerRun ?? MAX_BODIES;
+  const started = Date.now();
   const client = new ImapFlow({
     host: process.env.IMAP_HOST || "imappro.zoho.eu",
     port: Number(process.env.IMAP_PORT || 993),
@@ -106,6 +113,7 @@ export async function fetchNewEmails(opts: FetchOptions = {}): Promise<FetchResu
   let highestSeen = 0;
   let uidValidity = 0;
   let info = "";
+  let skipped = 0;
 
   await client.connect();
 
@@ -135,25 +143,56 @@ export async function fetchNewEmails(opts: FetchOptions = {}): Promise<FetchResu
       return { emails: [], commit: async () => {}, info: "no new mail" };
     }
 
-    const to = Math.min(uidNext - 1, mark.last_uid + maxPerRun);
+    const windowTop = Math.min(uidNext - 1, mark.last_uid + ENVELOPE_WINDOW);
     highestSeen = mark.last_uid;
 
-    for await (const msg of client.fetch(`${from}:${to}`, { source: true, uid: true }, { uid: true })) {
-      // `X:Y` ranges can return messages outside the range on some servers, and
-      // `X:*` always yields at least one. Trust the UID, not the range.
-      const uid = Number(msg.uid);
-      if (uid < from) continue;
-
-      const parsed = await simpleParser(msg.source as Buffer);
-      emails.push({
-        from: parsed.from?.text || "",
-        subject: parsed.subject || "",
-        text: parsed.text || "",
-        html: typeof parsed.html === "string" ? parsed.html : "",
-        date: parsed.date || new Date(),
-      });
-      if (uid > highestSeen) highestSeen = uid;
+    // ── Phase 1: envelopes ── cheap, batched, and the only thing that decides
+    // what's worth opening. `scannedTo` tracks how far we actually got, so a
+    // run cut short by the clock resumes rather than skipping.
+    const candidates: number[] = [];
+    let scannedTo = mark.last_uid;
+    for (let lo = from; lo <= windowTop; lo += ENVELOPE_BATCH) {
+      if (Date.now() - started > ENVELOPE_MS) break;
+      const hi = Math.min(lo + ENVELOPE_BATCH - 1, windowTop);
+      for await (const msg of client.fetch(`${lo}:${hi}`, { uid: true, envelope: true }, { uid: true })) {
+        // `X:Y` ranges can return messages outside the range on some servers.
+        // Trust the UID, not the range.
+        const uid = Number(msg.uid);
+        if (uid < lo || uid > hi) continue;
+        if (!isBulkNoise({ from: msg.envelope?.from?.[0]?.address, subject: msg.envelope?.subject })) {
+          candidates.push(uid);
+        }
+      }
+      scannedTo = hi;
     }
+    candidates.sort((a, b) => a - b);
+
+    // ── Phase 2: bodies, for candidates only ──
+    // More candidates than the cap? Take the oldest, and hold the watermark at
+    // the last one opened so the remainder is picked up next run instead of
+    // being skipped.
+    let examinedTo = scannedTo;
+    let wanted = candidates;
+    if (candidates.length > maxBodies) {
+      wanted = candidates.slice(0, maxBodies);
+      examinedTo = wanted[wanted.length - 1];
+    }
+
+    for (const uid of wanted) {
+      for await (const msg of client.fetch(String(uid), { source: true, uid: true }, { uid: true })) {
+        if (Number(msg.uid) !== uid || !msg.source) continue;
+        const parsed = await simpleParser(msg.source as Buffer);
+        emails.push({
+          from: parsed.from?.text || "",
+          subject: parsed.subject || "",
+          text: parsed.text || "",
+          html: typeof parsed.html === "string" ? parsed.html : "",
+          date: parsed.date || new Date(),
+        });
+      }
+    }
+    const to = examinedTo;
+    skipped = Math.max(0, scannedTo - mark.last_uid) - candidates.length;
 
     // The whole range from..to has now been examined, so that is where the
     // watermark belongs — NOT merely at the highest UID that came back.
@@ -170,7 +209,9 @@ export async function fetchNewEmails(opts: FetchOptions = {}): Promise<FetchResu
     highestSeen = advanceWatermark(to, highestSeen);
 
     const behind = uidNext - 1 - to;
-    info = `uid ${from}..${to}, ${emails.length} fetched` + (behind > 0 ? `, ${behind} still behind` : "");
+    info =
+      `uid ${from}..${to}, ${emails.length} opened of ${candidates.length} candidate(s), ` +
+      `${skipped} skipped as noise` + (behind > 0 ? `, ${behind} still behind` : "");
   } finally {
     lock.release();
     await client.logout();
