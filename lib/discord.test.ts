@@ -22,7 +22,7 @@ const sale = parseSeatix(asEmail(SEATIX_SALE))!;
 const p = seatixAlertPayload(sale, "1234567890") as {
   content: string;
   allowed_mentions: { parse: string[]; roles: string[] };
-  embeds: { title: string; fields: { name: string; value: string }[] }[];
+  embeds: { title: string; description?: string; fields: { name: string; value: string }[] }[];
 };
 
 console.log("\nseatixAlertPayload() — the role ping");
@@ -33,13 +33,32 @@ check("and blocks everything else (@everyone, stray mentions)", p.allowed_mentio
 console.log("\nseatixAlertPayload() — the content");
 const field = (n: string) => p.embeds[0].fields.find((f) => f.name === n)?.value;
 check("titled with the event", p.embeds[0].title,
-  "🎟️ Seatix sale — France vs England - World Cup - Match 103 (Bronze Final)");
-check("payout", field("Payout"), "675.00 EUR");
-check("qty", field("Qty"), "1");
-check("event date", field("Event date"), "2026-07-18");
-check("seat, joined for display", field("Seat"), "Section 122 · Row 30 · Seats 10");
-check("venue", field("Venue"), "Hard Rock Stadium");
+  "🎟️ Seatix — France vs England - World Cup - Match 103 (Bronze Final)");
+check("when and where, then the seat, in the description", p.embeds[0].description,
+  "2026-07-18  ·  Hard Rock Stadium\nSection **122**  ·  Row **30**  ·  Seat **10**");
+check("payout", field("Payout"), "**675.00 EUR**");
+check("tickets", field("Tickets"), "1");
 check("face value when the mail states one", field("Face value"), "1500.00 EUR");
+check("three money/count columns, nothing ragged", p.embeds[0].fields.length, 3);
+
+console.log("\nseatixAlertPayload() — nothing gets severed");
+// Discord 400s on an over-long title rather than trimming it, so no alert at all.
+const long = seatixAlertPayload(
+  { ...sale, eventName: "Wolverhampton Wanderers versus Brighton and Hove Albion ".repeat(8) },
+  "1"
+) as { embeds: { title: string }[] };
+check("title clamped under Discord's limit", long.embeds[0].title.length <= 256, true);
+check("and cut at a word, not mid-word", /\s\S*…$|[^\s]…$/.test(long.embeds[0].title), true);
+check("ellipsis marks the cut", long.embeds[0].title.endsWith("…"), true);
+
+console.log("\nseatixAlertPayload() — a sale with no seat detail");
+const bare = seatixAlertPayload(
+  { ...sale, section: null, seatRow: null, seats: null, location: null, eventDate: null, faceValue: undefined },
+  "1"
+) as { embeds: { description?: string; fields: { name: string; value: string }[] }[] };
+check("no empty seat line", bare.embeds[0].description, undefined);
+check("face value falls back to a dash, not 'undefined'",
+  bare.embeds[0].fields.find((f) => f.name === "Face value")?.value, "—");
 
 console.log("\nseatixAlertPayload() — no role configured");
 const noRole = seatixAlertPayload(sale) as Record<string, unknown>;

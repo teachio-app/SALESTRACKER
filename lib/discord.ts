@@ -136,31 +136,53 @@ export async function notifyScan(opts: {
 // stray mention the embed text might contain, and `roles: [id]` re-permits
 // exactly the one role we mean. Without it a webhook can be turned into an
 // @everyone megaphone by anything that lands in an event name.
+// Two separate jobs, deliberately not one function: flattening belongs to text
+// that came out of an email (an event name can carry newlines and runs of
+// spaces), while clamping applies to strings this file composed and whose
+// layout — the line break between "where" and "seat" — must survive.
+const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
+
+// Discord rejects the whole request when a limit is exceeded: an over-long
+// title is a 400 and no alert at all, not a shortened title. Cut on a word
+// boundary so what's left reads as a name rather than a severed string.
+function clamp(s: string, max: number): string {
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max - 1);
+  const space = cut.lastIndexOf(" ");
+  return (space > max * 0.6 ? cut.slice(0, space) : cut) + "…";
+}
+
 export function seatixAlertPayload(
   sale: ParsedSale,
   roleId?: string
 ): Record<string, unknown> {
+  // Seat identity on ONE line, labelled, in the order the ticket states it.
   const seat = [
-    sale.section && `Section ${sale.section}`,
-    sale.seatRow && `Row ${sale.seatRow}`,
-    sale.seats && `Seats ${sale.seats}`,
+    sale.section && `Section **${sale.section}**`,
+    sale.seatRow && `Row **${sale.seatRow}**`,
+    sale.seats && `Seat **${sale.seats}**`,
   ]
     .filter(Boolean)
-    .join(" · ");
+    .join("  ·  ");
+
+  // Where and when go in the description, so the fields below hold only money
+  // and counts — three tidy columns instead of a ragged six.
+  const where = [sale.eventDate, sale.location].filter(Boolean).join("  ·  ");
 
   const embed = {
-    title: `🎟️ Seatix sale — ${sale.eventName}`,
+    title: clamp(oneLine(`🎟️ Seatix — ${sale.eventName}`), 256),
     color: 0x0ca30c,
+    description: clamp([where, seat].filter(Boolean).join("\n"), 4096) || undefined,
     fields: [
-      { name: "Payout", value: `${sale.sellPrice.toFixed(2)} ${sale.currency}`, inline: true },
-      { name: "Qty", value: String(sale.qty), inline: true },
-      ...(sale.eventDate ? [{ name: "Event date", value: sale.eventDate, inline: true }] : []),
-      ...(seat ? [{ name: "Seat", value: seat, inline: false }] : []),
-      ...(sale.location ? [{ name: "Venue", value: sale.location, inline: false }] : []),
-      ...(sale.faceValue != null
-        ? [{ name: "Face value", value: `${sale.faceValue.toFixed(2)} ${sale.currency}`, inline: true }]
-        : []),
+      { name: "Payout", value: `**${sale.sellPrice.toFixed(2)} ${sale.currency}**`, inline: true },
+      { name: "Tickets", value: String(sale.qty), inline: true },
+      {
+        name: "Face value",
+        value: sale.faceValue != null ? `${sale.faceValue.toFixed(2)} ${sale.currency}` : "—",
+        inline: true,
+      },
     ],
+    footer: { text: sale.orderRef ? `Seatix · order ${sale.orderRef}` : "Seatix" },
     timestamp: new Date().toISOString(),
   };
 

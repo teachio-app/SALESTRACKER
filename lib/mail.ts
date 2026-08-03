@@ -45,6 +45,17 @@ const MAX_PER_RUN = 15;
 
 type Watermark = { uid_validity: number; last_uid: number };
 
+/**
+ * Where the watermark lands after a run examined UIDs up to `rangeTop`.
+ *
+ * Pure, and exported, because getting it wrong is invisible: the poller keeps
+ * answering 200 and quietly stops seeing mail. See the call site for the
+ * ten-day outage this caused.
+ */
+export function advanceWatermark(rangeTop: number, highestUidSeen: number): number {
+  return Math.max(rangeTop, highestUidSeen);
+}
+
 async function readWatermark(key: string): Promise<Watermark | null> {
   const db = supabaseAdmin();
   const { data } = await db
@@ -143,6 +154,20 @@ export async function fetchNewEmails(opts: FetchOptions = {}): Promise<FetchResu
       });
       if (uid > highestSeen) highestSeen = uid;
     }
+
+    // The whole range from..to has now been examined, so that is where the
+    // watermark belongs — NOT merely at the highest UID that came back.
+    //
+    // UIDs are not contiguous: deleting or moving a message leaves a permanent
+    // hole. A range that lands entirely in a hole returns nothing, and the old
+    // code then wrote back the unchanged watermark — so the next run requested
+    // the same dead range, got nothing again, and so on forever. That is exactly
+    // what happened here: the poller sat on uid 55583..55597 for ten days,
+    // 4,186 messages behind, silently never reaching another sale.
+    //
+    // Empty range examined = range dealt with. max() because some servers hand
+    // back messages past the end of a `X:Y` range, and those were processed too.
+    highestSeen = advanceWatermark(to, highestSeen);
 
     const behind = uidNext - 1 - to;
     info = `uid ${from}..${to}, ${emails.length} fetched` + (behind > 0 ? `, ${behind} still behind` : "");

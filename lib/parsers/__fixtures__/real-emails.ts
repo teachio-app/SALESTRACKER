@@ -24,6 +24,34 @@ Profit	-825.00€
 ROI	-55.0%
 Thank you for using our platform!`;
 
+// The same layout as SEATIX_SALE but with the two things the real mail has and
+// the fixture didn't: the sender address in the body (which contains the letters
+// "seat"), and a section whose name is words rather than a number.
+//
+// Unanchored, `/Seats?\s*\n?\s*([^\n]+)/` matched inside "sales@seatiks.com" —
+// first() takes the earliest match in the whole body — and a live alert went out
+// reading "Seats iks sales@seatiks.com". This fixture is why the labels are now
+// line-anchored and word-bounded.
+export const SEATIX_SALE_TRAP = `Sale Confirmation
+From: iks sales@seatiks.com
+Your sale has been confirmed
+
+Event	Bad Bunny - Most Wanted Tour
+Date	14/09/2026 20:00
+Venue	Estadio Metropolitano
+Quantity	2
+Section	Section Golden Circle 2 Links
+Row	1
+Seats	14 - 15
+Format	External Transfer
+Platform	Gigsberg
+Financial Summary
+Price per ticket	410.00€
+Total proceeds	820.00€
+Payout	820.00€
+Total face value	560.00€
+Questions? Reply to iks sales@seatiks.com`;
+
 export const VIAGOGO_SALE = `etr, you sold 1 ticket!
 Congrats, you sold 1 ticket!
 

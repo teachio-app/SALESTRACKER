@@ -48,18 +48,30 @@ export const parseSeatix: Parser = (email: RawEmail): ParsedSale | null => {
   const body = email.text || email.html || "";
   if (!isSeatix(body)) return null;
 
-  const eventName = first(body, /Event\s*\n?\s*([^\n]+)/i);
-  const rawDate = first(body, /Date\s*\n?\s*(\d{1,2}\/\d{1,2}\/\d{4}[^\n]*)/i);
-  const venue = first(body, /Venue\s*\n?\s*([^\n]+)/i);
-  const qtyStr = first(body, /Quantity\s*\n?\s*(\d+)/i);
+  // Every label is anchored to the START of a line and closed with a word
+  // boundary. Both halves earned their place:
+  //
+  //   * unanchored, `Seats?` matched inside the sender "sales@seatiks.com" —
+  //     "Seat" + "iks…" — and the alert went out reading
+  //     "Seats iks sales@seatiks.com" instead of the seat number. `\b` after
+  //     `Seats?` kills that: "Seat" followed by "i" is not a word boundary.
+  //   * `^` stops any label word appearing mid-sentence in the body from
+  //     winning, since first() takes the earliest match in the whole mail.
+  //
+  // [ \t]* rather than \s* for the gap, so a label can never swallow the next
+  // line's content when its own value is empty.
+  const eventName = first(body, /^[ \t]*Event\b[ \t]*\n?[ \t]*([^\n]+)/im);
+  const rawDate = first(body, /^[ \t]*Date\b[ \t]*\n?[ \t]*(\d{1,2}\/\d{1,2}\/\d{4}[^\n]*)/im);
+  const venue = first(body, /^[ \t]*Venue\b[ \t]*\n?[ \t]*([^\n]+)/im);
+  const qtyStr = first(body, /^[ \t]*Quantity\b[ \t]*\n?[ \t]*(\d+)/im);
   const clean = (s: string | null, label: RegExp) =>
     s ? s.replace(label, "").trim() : null;
-  const section = clean(first(body, /Section\s*\n?\s*([^\n]+)/i), /^Section\s*/i);
-  const row = clean(first(body, /Row\s*\n?\s*([^\n]+)/i), /^Row\s*/i);
-  const seats = clean(first(body, /Seats?\s*\n?\s*([^\n]+)/i), /^Seats?\s*/i);
+  const section = clean(first(body, /^[ \t]*Section\b[ \t]*\n?[ \t]*([^\n]+)/im), /^Section\s*/i);
+  const row = clean(first(body, /^[ \t]*Row\b[ \t]*\n?[ \t]*([^\n]+)/im), /^Row\s*/i);
+  const seats = clean(first(body, /^[ \t]*Seats?\b[ \t]*\n?[ \t]*([^\n]+)/im), /^Seats?\s*/i);
 
-  const payoutStr = first(body, /Payout\s*\n?\s*([\d.,]+\s*€)/i);
-  const faceStr = first(body, /Total\s+face\s+value\s*\n?\s*([\d.,]+\s*€)/i);
+  const payoutStr = first(body, /^[ \t]*Payout\b[ \t]*\n?[ \t]*([\d.,]+\s*€)/im);
+  const faceStr = first(body, /^[ \t]*Total\s+face\s+value\b[ \t]*\n?[ \t]*([\d.,]+\s*€)/im);
 
   const payout = parseEuro(payoutStr);
   const faceValue = parseEuro(faceStr);

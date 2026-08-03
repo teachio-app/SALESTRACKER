@@ -8,7 +8,7 @@ import { parseViagogoPayment, isViagogoPayment } from "./viagogoPayment";
 import { parseLa28Order, isLa28Order, parseLa28Date } from "./la28";
 import { htmlToText, pickExtractSource } from "../htmlText";
 import {
-  SEATIX_SALE, VIAGOGO_SALE, VIAGOGO_CONCERT,
+  SEATIX_SALE, SEATIX_SALE_TRAP, VIAGOGO_SALE, VIAGOGO_CONCERT,
   VIAGOGO_SALE_V2, VIAGOGO_SALE_V2_SUBJECT,
   VIAGOGO_SALE_V3, VIAGOGO_SALE_V3_SUBJECT,
   VIAGOGO_PAYMENT, VIAGOGO_PAYMENT_SUBJECT, asEmail,
@@ -57,6 +57,18 @@ check("seats", s?.seats, "10");
 check("qty", s?.qty, 1);
 check("sellPrice", s?.sellPrice, 675);
 check("faceValue", s?.faceValue, 1500);
+
+console.log("\nparseSeatix() — the sender address must not be read as a seat");
+const st = parseSeatix(asEmail(SEATIX_SALE_TRAP));
+check("recognised", st !== null, true);
+check("seats is the seat, not 'iks sales@seatiks.com'", st?.seats, "14 - 15");
+check("section keeps a worded name", st?.section, "Golden Circle 2 Links");
+check("seatRow", st?.seatRow, "1");
+check("eventName", st?.eventName, "Bad Bunny - Most Wanted Tour");
+check("venue", st?.location, "Estadio Metropolitano");
+check("qty", st?.qty, 2);
+check("payout", st?.sellPrice, 820);
+check("faceValue", st?.faceValue, 560);
 
 console.log("\nparseViagogo() — concert at an arena (no 'World Cup', no 'Stadium')");
 const c = parseViagogo(asEmail(VIAGOGO_CONCERT));
