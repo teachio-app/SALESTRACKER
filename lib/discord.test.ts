@@ -39,7 +39,7 @@ check("payout", field("Payout"), "675.00 EUR");
 check("qty", field("Qty"), "1");
 check("PLATFORM says where it sold", field("Platform"), "Seatix");
 check("seat, joined for display", field("Seat"), "Section 122 · Row 30 · Seats 10");
-check("location", field("Location"), "Hard Rock Stadium");
+check("location carries the country", field("Location"), "Hard Rock Stadium · 🇺🇸 USA");
 check("event date", field("Event date"), "2026-07-18");
 check("face value when the mail states one", field("Face value"), "1500.00 EUR");
 

@@ -1,5 +1,6 @@
 import { ParsedSale } from "./parsers";
 import type { ViagogoPayment } from "./parsers/viagogoPayment";
+import { venueWithCountry } from "./venueCountry";
 
 // A ping only fires if the message CONTENT holds `<@id>` (embeds never ping),
 // and Discord needs the numeric user ID — a username can't be mentioned. Set
@@ -50,6 +51,8 @@ export function saleEmbed(sale: ParsedSale): Record<string, unknown> {
     .filter(Boolean)
     .join(" · ");
 
+  const venue = venueWithCountry(sale.location);
+
   return {
     title: clamp(oneLine(`💰 Sold — ${sale.eventName}`), 256),
     color: 0x0ca30c,
@@ -58,7 +61,10 @@ export function saleEmbed(sale: ParsedSale): Record<string, unknown> {
       { name: "Qty", value: String(sale.qty), inline: true },
       { name: "Platform", value: platformName(sale.source), inline: true },
       ...(seat ? [{ name: "Seat", value: clamp(seat, 1024), inline: false }] : []),
-      ...(sale.location ? [{ name: "Location", value: clamp(oneLine(sale.location), 1024), inline: false }] : []),
+      // Venue with the country appended when it can be worked out from the text
+      // — the mails have no country field, so see venueCountry.ts for how far
+      // that goes and where it stops rather than guess.
+      ...(venue ? [{ name: "Location", value: clamp(oneLine(venue), 1024), inline: false }] : []),
       ...(sale.orderRef ? [{ name: "Order", value: sale.orderRef, inline: true }] : []),
       ...(sale.eventDate ? [{ name: "Event date", value: sale.eventDate, inline: true }] : []),
       ...(sale.faceValue != null
