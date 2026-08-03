@@ -22,13 +22,26 @@ async function post(url: string, body: unknown): Promise<void> {
   }
 }
 
-// Fire-and-forget Discord notification. Discord is notification-only here —
-// it never feeds data back into the app.
-export async function notifyDiscord(sale: ParsedSale): Promise<void> {
-  const url = process.env.DISCORD_WEBHOOK_URL;
-  if (!url) return;
+// Which platform the sale came from. The parsers already set `source`, so this
+// is presentation only: the raw slug read like a database value in the alert.
+// viagogo brands itself lower-case; Seatix doesn't.
+const PLATFORM_LABEL: Record<string, string> = { viagogo: "viagogo", seatix: "Seatix" };
+function platformName(source: string | null | undefined): string {
+  if (!source) return "unknown";
+  return PLATFORM_LABEL[source.toLowerCase()] ?? source;
+}
 
-  // Seat identity lives in three fields now; join them for display only.
+// ── The sale embed ────────────────────────────────────────────────────
+// ONE builder, used by both webhooks — the main one and the standalone Seatix
+// alerter. They are meant to look identical, so they are literally the same
+// embed; the only difference between the two messages is which webhook it goes
+// to and whether a role gets pinged. Built as a shared function rather than two
+// copies kept in step by hand, because "kept in step by hand" is how they drift.
+//
+// Every field that depends on data appears only when that data exists: Viagogo
+// mails state no face value, GA tickets have no seat.
+export function saleEmbed(sale: ParsedSale): Record<string, unknown> {
+  // Seat identity lives in three fields; joined for display only.
   const seat = [
     sale.section && `Section ${sale.section}`,
     sale.seatRow && `Row ${sale.seatRow}`,
@@ -37,21 +50,31 @@ export async function notifyDiscord(sale: ParsedSale): Promise<void> {
     .filter(Boolean)
     .join(" · ");
 
-  const embed = {
-    title: `💰 Sold — ${sale.eventName}`,
+  return {
+    title: clamp(oneLine(`💰 Sold — ${sale.eventName}`), 256),
     color: 0x0ca30c,
     fields: [
       { name: "Payout", value: `${sale.sellPrice.toFixed(2)} ${sale.currency}`, inline: true },
       { name: "Qty", value: String(sale.qty), inline: true },
-      { name: "Source", value: sale.source, inline: true },
-      ...(seat ? [{ name: "Seat", value: seat, inline: false }] : []),
-      ...(sale.location ? [{ name: "Location", value: sale.location, inline: false }] : []),
+      { name: "Platform", value: platformName(sale.source), inline: true },
+      ...(seat ? [{ name: "Seat", value: clamp(seat, 1024), inline: false }] : []),
+      ...(sale.location ? [{ name: "Location", value: clamp(oneLine(sale.location), 1024), inline: false }] : []),
       ...(sale.orderRef ? [{ name: "Order", value: sale.orderRef, inline: true }] : []),
+      ...(sale.eventDate ? [{ name: "Event date", value: sale.eventDate, inline: true }] : []),
+      ...(sale.faceValue != null
+        ? [{ name: "Face value", value: `${sale.faceValue.toFixed(2)} ${sale.currency}`, inline: true }]
+        : []),
     ],
     timestamp: new Date().toISOString(),
   };
+}
 
-  await post(url, { ...mention(), embeds: [embed] });
+// Fire-and-forget Discord notification. Discord is notification-only here —
+// it never feeds data back into the app.
+export async function notifyDiscord(sale: ParsedSale): Promise<void> {
+  const url = process.env.DISCORD_WEBHOOK_URL;
+  if (!url) return;
+  await post(url, { ...mention(), embeds: [saleEmbed(sale)] });
 }
 
 // ── Scanner finish notification ───────────────────────────────────────
@@ -156,39 +179,11 @@ export function seatixAlertPayload(
   sale: ParsedSale,
   roleId?: string
 ): Record<string, unknown> {
-  // Seat identity on ONE line, labelled, in the order the ticket states it.
-  const seat = [
-    sale.section && `Section **${sale.section}**`,
-    sale.seatRow && `Row **${sale.seatRow}**`,
-    sale.seats && `Seat **${sale.seats}**`,
-  ]
-    .filter(Boolean)
-    .join("  ·  ");
-
-  // Where and when go in the description, so the fields below hold only money
-  // and counts — three tidy columns instead of a ragged six.
-  const where = [sale.eventDate, sale.location].filter(Boolean).join("  ·  ");
-
-  const embed = {
-    title: clamp(oneLine(`🎟️ Seatix — ${sale.eventName}`), 256),
-    color: 0x0ca30c,
-    description: clamp([where, seat].filter(Boolean).join("\n"), 4096) || undefined,
-    fields: [
-      { name: "Payout", value: `**${sale.sellPrice.toFixed(2)} ${sale.currency}**`, inline: true },
-      { name: "Tickets", value: String(sale.qty), inline: true },
-      {
-        name: "Face value",
-        value: sale.faceValue != null ? `${sale.faceValue.toFixed(2)} ${sale.currency}` : "—",
-        inline: true,
-      },
-    ],
-    footer: { text: sale.orderRef ? `Seatix · order ${sale.orderRef}` : "Seatix" },
-    timestamp: new Date().toISOString(),
-  };
-
   return {
     ...(roleId ? { content: `<@&${roleId}>`, allowed_mentions: { parse: [], roles: [roleId] } } : {}),
-    embeds: [embed],
+    // Same embed as the main webhook, on purpose — the Platform field is what
+    // says this one came from Seatix.
+    embeds: [saleEmbed(sale)],
   };
 }
 
