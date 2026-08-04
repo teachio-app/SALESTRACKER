@@ -293,23 +293,28 @@ API just sends. Two consequences worth knowing before relying on it:
 - **Pushover licenses an Open Client as a desktop device** — a Pushover for
   Desktop licence is required within 30 days of activating one.
 
-Setup:
+Setup — step 1 reads `CRON_SECRET` out of `.env.local`, so there is nothing to
+look up by hand:
 
 ```
-# 1. once — returns PUSHOVER_SECRET and PUSHOVER_DEVICE_ID to put in Vercel
-curl -H "Authorization: Bearer <CRON_SECRET>" \
-  "https://<app>.vercel.app/api/cron/pushover-bridge?setup=1&email=<you>&password=<pw>"
+# 1. once, from the ticket-tracker folder. Prints the variables to paste
+#    into Vercel. The password is used for this one call and never stored.
+node scripts/pushover-setup.mjs you@example.com "your-password" [2fa-code]
 
-# 2. check the webhook and the role ping
+# 2. after adding them in Vercel and redeploying — check the webhook
 curl -H "Authorization: Bearer <CRON_SECRET>" \
   "https://<app>.vercel.app/api/cron/pushover-bridge?test=1"
 
-# 3. a key per source: paste the result into that app's USER KEY field
+# 3. optional, later: a key per source. Paste the result into that app's
+#    USER KEY field, leaving its own app token alone.
 curl -H "Authorization: Bearer <CRON_SECRET>" \
   "https://<app>.vercel.app/api/cron/pushover-bridge?group=ticket-bot"
 ```
 
 Then point a cron-job.org job at the bare URL, like the other two.
+
+`PUSHOVER_WEBHOOK_URL` is optional: leave it unset and relayed notifications go
+to `DISCORD_WEBHOOK_URL`, the same place sale alerts already land.
 
 A **group key is used in place of a user key**, which is what makes one key per
 source possible: each app gets its own, they all still deliver to you, and the

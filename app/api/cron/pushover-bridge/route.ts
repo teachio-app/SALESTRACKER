@@ -67,6 +67,18 @@ async function toDiscord(url: string, payload: Record<string, unknown>): Promise
 }
 
 export async function GET(req: Request) {
+  try {
+    return await handle(req);
+  } catch (e) {
+    // Pushover reports "invalid email or password", "session expired" and the
+    // like in its own error array, which lib/pushover.ts turns into a thrown
+    // message. Letting that escape gives Next's bare 500 with an empty body —
+    // useless precisely during setup, which is where the mistakes happen.
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 502 });
+  }
+}
+
+async function handle(req: Request) {
   if (req.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
