@@ -276,6 +276,46 @@ rather than quietly advancing its watermark past sales nobody was told about.
 A failed Discord post holds the watermark too, so an outage delays alerts
 instead of losing them.
 
+## The Discord → Discord relay (standalone)
+
+`/api/cron/discord-relay` reads a channel you can see but don't own, and reposts
+new messages to your own webhook. A bot on the REST API (`GET
+/channels/{id}/messages` every few minutes), so there's no gateway connection to
+keep alive and it fits the same serverless cron as everything else. No UI,
+nothing written to `tickets`, no schema change.
+
+Two Discord-side requirements, both of which fail **silently**:
+
+- the bot needs **View Channel + Read Message History** on that channel;
+- the app needs the **MESSAGE CONTENT intent** (Developer Portal → Bot →
+  Privileged Gateway Intents). It gates `content`, `embeds`, `attachments` and
+  `components`, and applies to the REST API too — without it the bot still sees
+  the messages, it just sees them EMPTY, which reads exactly like a quiet
+  channel. `?peek=1` and the `emptyContent` counter exist to make that visible.
+
+Setup:
+
+1. discord.com/developers → New Application → Bot → copy the token, and switch
+   **Message Content Intent** on.
+2. OAuth2 → URL Generator → scope `bot`, permissions **View Channel** +
+   **Read Message History** → open the link and add it to the source server.
+   *This step needs someone with Manage Server there.*
+3. Set `RELAY_BOT_TOKEN` and `RELAY_SOURCE_CHANNEL_ID` in Vercel, redeploy.
+4. Check it: `?peek=1` reports whether the bot can see the channel and whether
+   content is arriving — without relaying anything or moving the cursor.
+5. Point a cron-job.org job at the bare URL.
+
+The first run adopts the current position and backfills nothing, like the mail
+poller. Empty messages still advance the cursor — otherwise it would stick on
+one forever, which is exactly the trap the mail watermark fell into.
+
+`allowed_mentions: { parse: [] }` on every relayed post is not optional: this
+forwards text written by someone else, so without it a source message containing
+`@everyone` would fire `@everyone` in **your** server.
+
+Reading a channel with a *user* account needs no bot and no permission, and is a
+Terms of Service violation that gets accounts banned. It isn't offered here.
+
 ## The Pushover → Discord bridge (standalone)
 
 Some tools only know how to shout into Pushover — they take a user key and an
