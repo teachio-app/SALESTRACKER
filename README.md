@@ -276,6 +276,51 @@ rather than quietly advancing its watermark past sales nobody was told about.
 A failed Discord post holds the watermark too, so an outage delays alerts
 instead of losing them.
 
+## The Pushover → Discord bridge (standalone)
+
+Some tools only know how to shout into Pushover — they take a user key and an
+app token and offer nothing else. `/api/cron/pushover-bridge` relays those into
+a Discord channel. Same shape as the Seatix module: no UI, nothing written to
+`tickets`, no schema change (its "highest relayed id" lives in `poll_state`
+under `pushover@bridge`, which is the same idea as a mail watermark).
+
+Receiving is only possible through Pushover's **Open Client API** — the ordinary
+API just sends. Two consequences worth knowing before relying on it:
+
+- **Login takes the account password, not a key.** So it happens once, via
+  `?setup=1`, and only the resulting `secret` and `device_id` are kept. Those can
+  read messages; they cannot own the account. The password is never stored.
+- **Pushover licenses an Open Client as a desktop device** — a Pushover for
+  Desktop licence is required within 30 days of activating one.
+
+Setup:
+
+```
+# 1. once — returns PUSHOVER_SECRET and PUSHOVER_DEVICE_ID to put in Vercel
+curl -H "Authorization: Bearer <CRON_SECRET>" \
+  "https://<app>.vercel.app/api/cron/pushover-bridge?setup=1&email=<you>&password=<pw>"
+
+# 2. check the webhook and the role ping
+curl -H "Authorization: Bearer <CRON_SECRET>" \
+  "https://<app>.vercel.app/api/cron/pushover-bridge?test=1"
+
+# 3. a key per source: paste the result into that app's USER KEY field
+curl -H "Authorization: Bearer <CRON_SECRET>" \
+  "https://<app>.vercel.app/api/cron/pushover-bridge?group=ticket-bot"
+```
+
+Then point a cron-job.org job at the bare URL, like the other two.
+
+A **group key is used in place of a user key**, which is what makes one key per
+source possible: each app gets its own, they all still deliver to you, and the
+relay labels every alert with the app that sent it. What can't be done is
+minting someone else's *user* key — those only come from a person registering.
+
+Acknowledgement is deliberate: messages are marked delivered at Pushover only
+after they reach Discord, and the loop stops at the first webhook failure. A
+Discord outage delays alerts rather than eating them — the same contract as the
+mail watermark.
+
 ## Deploy & scheduling
 
 ### Cron auth (this is settled, don't second-guess it)
