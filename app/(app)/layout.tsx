@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { saleTotals, type CashEntry, type Ticket } from "@/lib/supabase";
+import { saleTotals, type CashEntry, type Ticket, type Todo } from "@/lib/supabase";
 import PurchaseModal, { EMPTY_PURCHASE } from "@/app/PurchaseModal";
 import SellModal from "@/app/SellModal";
 import EntryModal, { emptyEntry } from "@/app/EntryModal";
@@ -16,9 +16,11 @@ import { DashProvider, type DashCtx } from "./DashContext";
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [entries, setEntries] = useState<CashEntry[]>([]);
+  const [todos, setTodos] = useState<Todo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [entriesError, setEntriesError] = useState<string | null>(null);
+  const [todosError, setTodosError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Partial<Ticket> | null>(null);
   const [selling, setSelling] = useState<Ticket | null>(null);
   const [linking, setLinking] = useState<Ticket | null>(null);
@@ -33,16 +35,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // Signature of the last data we rendered (row count + newest updated_at). A
   // background poll only re-renders when this changes, so an idle tab isn't
   // churning the table every few seconds.
-  const sigRef = useRef({ tickets: "", entries: "" });
+  const sigRef = useRef({ tickets: "", entries: "", todos: "" });
 
   async function load(silent = false) {
     if (!silent) setLoading(true);
-    // allSettled, not all: the two lists live in separate tables and one being
-    // unreachable (e.g. `entries` before schema.sql has been re-run) must not
-    // take the other's page down with it.
-    const [t, e] = await Promise.allSettled([
+    // allSettled, not all: these lists live in separate tables and one being
+    // unreachable (e.g. `todos` before schema.sql has been re-run) must not
+    // take the others' pages down with it.
+    const [t, e, d] = await Promise.allSettled([
       fetchList<Ticket>("/api/tickets"),
       fetchList<CashEntry>("/api/entries"),
+      fetchList<Todo>("/api/todos"),
     ]);
 
     if (t.status === "fulfilled") {
@@ -67,6 +70,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     } else {
       setEntriesError(message(e.reason));
       if (!silent) setEntries([]);
+    }
+
+    if (d.status === "fulfilled") {
+      const sig = signature(d.value);
+      if (sig !== sigRef.current.todos) {
+        sigRef.current.todos = sig;
+        setTodos(d.value);
+      }
+      setTodosError(null);
+    } else {
+      setTodosError(message(d.reason));
+      if (!silent) setTodos([]);
     }
 
     if (!silent) setLoading(false);
@@ -152,6 +167,44 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     load(true);
   }
 
+  // ── To-do ── ticking a box must feel instant, so every change is optimistic
+  // and the silent refetch reconciles (done_at is stamped by a trigger).
+  async function saveTodo(t: Partial<Todo>) {
+    if (t.id) setTodos((prev) => prev.map((x) => (x.id === t.id ? { ...x, ...t } : x)));
+    const res = await fetch("/api/todos", {
+      method: t.id ? "PATCH" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(t),
+    });
+    if (!res.ok) {
+      const b = await res.json().catch(() => ({}));
+      setTodosError(`Save failed: ${b.error ?? res.status}`);
+    }
+    load(true);
+  }
+
+  async function removeTodo(id: string) {
+    setTodos((prev) => prev.filter((x) => x.id !== id));
+    await fetch("/api/todos", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    load(true);
+  }
+
+  async function clearDoneTodos() {
+    const n = todos.filter((t) => t.done).length;
+    if (!n || !confirm(`Delete ${n} finished item${n === 1 ? "" : "s"}?`)) return;
+    setTodos((prev) => prev.filter((t) => !t.done));
+    await fetch("/api/todos", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ doneOnly: true }),
+    });
+    load(true);
+  }
+
   const ctx: DashCtx = {
     tickets,
     loading,
@@ -221,6 +274,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     saveEntry,
     removeEntry,
     openEntry: (e) => setEntryDraft({ ...emptyEntry(), ...e }),
+
+    todos,
+    todosError,
+    saveTodo,
+    removeTodo,
+    clearDoneTodos,
   };
 
   return (

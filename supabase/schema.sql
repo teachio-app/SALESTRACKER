@@ -145,6 +145,31 @@ alter table entries enable row level security;
 create index if not exists entries_occurred_at_idx on entries (occurred_at);
 create index if not exists entries_ticket_id_idx   on entries (ticket_id);
 
+-- ── To-do: things to put into the tracker later ──────────────────────
+-- A scratchpad for work that isn't done yet: "add the buy prices for the LA28
+-- batch", "chase the Cardiff payout". Free text on purpose — it is written in a
+-- hurry, and a form with required fields would just stop it being written.
+--
+-- `due` is nullable because most notes have no deadline; the ones that do are
+-- the point of having it. `done` is kept rather than deleted so a finished list
+-- still shows what was cleared, and `done_at` records when.
+create table if not exists todos (
+  id         uuid primary key default gen_random_uuid(),
+  text       text not null,
+  due        date,
+  done       boolean not null default false,
+  done_at    timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Same lockdown as every other table here: RLS on, zero policies, reached only
+-- through the server-side service-role key.
+alter table todos enable row level security;
+
+create index if not exists todos_due_idx  on todos (due);
+create index if not exists todos_done_idx on todos (done);
+
 -- ── Poller watermark ─────────────────────────────────────────────────
 -- Where the mail poller got to, so processing state lives HERE and not in the
 -- owner's mailbox.
@@ -247,3 +272,30 @@ drop trigger if exists entries_touch on entries;
 create trigger entries_touch
   before update on entries
   for each row execute function touch_updated_at();
+
+drop trigger if exists todos_touch on todos;
+create trigger todos_touch
+  before update on todos
+  for each row execute function touch_updated_at();
+
+-- Stamp done_at the moment an item is first ticked off, and clear it if the
+-- item is reopened — so the timestamp can never claim something is finished
+-- when the checkbox says otherwise.
+create or replace function stamp_done_at()
+returns trigger
+set search_path = ''
+as $$
+begin
+  if new.done and not coalesce(old.done, false) then
+    new.done_at = now();
+  elsif not new.done then
+    new.done_at = null;
+  end if;
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists todos_stamp_done on todos;
+create trigger todos_stamp_done
+  before insert or update on todos
+  for each row execute function stamp_done_at();

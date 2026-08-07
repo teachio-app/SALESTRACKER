@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext } from "react";
-import type { CashEntry, Ticket } from "@/lib/supabase";
+import type { CashEntry, Ticket, Todo } from "@/lib/supabase";
 
 // Shared data + actions, provided by the (app) layout and consumed by both the
 // events table and the charts page. Fetched once per navigation into the group,
@@ -35,6 +35,15 @@ export type DashCtx = {
   removeEntry: (id: string) => Promise<void>;
   /** Open the entry modal — prefilled when the quick-add row hands over a draft. */
   openEntry: (e?: Partial<CashEntry>) => void;
+
+  // ── To-do: notes for work still to be put into the tracker ──
+  todos: Todo[];
+  /** Its own error slot, so a missing `todos` table can't blank another page. */
+  todosError: string | null;
+  saveTodo: (t: Partial<Todo>) => Promise<void>;
+  removeTodo: (id: string) => Promise<void>;
+  /** Delete every finished item in one call. */
+  clearDoneTodos: () => Promise<void>;
 };
 
 const Ctx = createContext<DashCtx | null>(null);

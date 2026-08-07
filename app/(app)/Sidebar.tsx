@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { todoCounts } from "@/lib/supabase";
 import { useDash } from "./DashContext";
 
 // Rename the app here.
@@ -9,15 +10,19 @@ const APP_NAME = "DESKTRACKER";
 
 export default function Sidebar() {
   const path = usePathname();
-  const { openAdd, openEntry, tickets } = useDash();
+  const { openAdd, openEntry, tickets, todos } = useDash();
   const reviewCount = tickets.filter((t) => t.needs_review).length;
+  const todoCount = todoCounts(todos);
 
   const NAV = [
-    { href: "/", label: "Events", badge: 0 },
-    { href: "/cashflow", label: "Cashflow", badge: 0 },
-    { href: "/charts", label: "Charts", badge: 0 },
-    { href: "/review", label: "Review", badge: reviewCount },
-    { href: "/scanner", label: "Scanner", badge: 0 },
+    { href: "/", label: "Events", badge: 0, alert: false },
+    { href: "/cashflow", label: "Cashflow", badge: 0, alert: false },
+    { href: "/charts", label: "Charts", badge: 0, alert: false },
+    { href: "/review", label: "Review", badge: reviewCount, alert: false },
+    // The badge counts what's still open; it turns red once something is late,
+    // so a missed deadline is visible from any page without opening the list.
+    { href: "/todo", label: "To do", badge: todoCount.open, alert: todoCount.overdue > 0 },
+    { href: "/scanner", label: "Scanner", badge: 0, alert: false },
   ];
 
   return (
@@ -45,7 +50,9 @@ export default function Sidebar() {
         <Link key={n.href} href={n.href}
               className={"nav-btn" + (path === n.href ? " is-active" : "")}>
           {n.label}
-          {n.badge > 0 && <span className="nav-badge">{n.badge}</span>}
+          {n.badge > 0 && (
+            <span className={"nav-badge" + (n.alert ? " is-late" : "")}>{n.badge}</span>
+          )}
         </Link>
       ))}
     </aside>

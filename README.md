@@ -119,6 +119,25 @@ flows or counts of the window: Sold, Problems, Total profit.
 pinned down by `lib/money.test.ts` — half-sold batches, a payout that landed, a
 `qty_sold` that overshoots `qty_total`. Run both suites with `npm test`.
 
+## To do
+
+A scratchpad for work that still has to go into the tracker — "add the buy
+prices for the LA28 batch", "chase the Cardiff payout" — with an optional
+deadline. Free text on purpose: it gets written in a hurry, and a form with
+required fields would just stop it being written.
+
+Order is the whole value of the page, so it isn't a sortable table: **overdue
+first, then today, then by deadline, undated below that, finished at the
+bottom**. Within the undated group the newest is first — an undated note is a
+thought you just had, not a task from last month. The sidebar badge counts what's
+open and turns **red** the moment something is late, so a missed deadline shows
+from every page.
+
+Dates are compared as `yyyy-mm-dd` strings, never parsed into `Date`, so nothing
+can shift by a day in a non-UTC timezone; `todayISO()` is deliberately local
+rather than `toISOString()`, which is UTC and reads as yesterday late in the
+evening. `lib/todo.test.ts` pins both, plus the year/month boundaries.
+
 ## The one rule that shapes everything
 
 **The poller fills in the sell side only. Buy prices are always typed in by hand.**

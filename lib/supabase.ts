@@ -121,6 +121,65 @@ export function entryTotals(rows: CashEntry[]): { income: number; expense: numbe
   return { income, expense, net: income - expense };
 }
 
+// ── To-do ─────────────────────────────────────────────────────────────
+// Notes for work that still has to go into the tracker. Free text with an
+// optional deadline — see the `todos` table in schema.sql.
+export type Todo = {
+  id: string;
+  text: string;
+  due: string | null; // yyyy-mm-dd, optional
+  done: boolean;
+  done_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TodoState = "done" | "overdue" | "today" | "upcoming" | "someday";
+
+/** Local yyyy-mm-dd. Not toISOString(), which is UTC and can be yesterday. */
+export function todayISO(d = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+export function todoState(t: Pick<Todo, "due" | "done">, today = todayISO()): TodoState {
+  if (t.done) return "done";
+  if (!t.due) return "someday";
+  // Both sides are yyyy-mm-dd, so a string compare IS a date compare — no Date
+  // parsing, and therefore no timezone to get it wrong by a day.
+  if (t.due < today) return "overdue";
+  if (t.due === today) return "today";
+  return "upcoming";
+}
+
+const ORDER: Record<TodoState, number> = { overdue: 0, today: 1, upcoming: 2, someday: 3, done: 4 };
+
+/**
+ * What needs doing first, first. Open items before finished ones, dated before
+ * undated, earliest deadline at the top; within a group, newest note first —
+ * an undated note is a thought you just had, not a task from last month.
+ */
+export function sortTodos(list: Todo[], today = todayISO()): Todo[] {
+  return [...list].sort((a, b) => {
+    const d = ORDER[todoState(a, today)] - ORDER[todoState(b, today)];
+    if (d !== 0) return d;
+    if (a.due && b.due && a.due !== b.due) return a.due < b.due ? -1 : 1;
+    return a.created_at < b.created_at ? 1 : -1;
+  });
+}
+
+/** Headline counts for the page and the sidebar badge. */
+export function todoCounts(list: Todo[], today = todayISO()) {
+  let open = 0, overdue = 0, dueToday = 0, done = 0;
+  for (const t of list) {
+    const s = todoState(t, today);
+    if (s === "done") done++;
+    else open++;
+    if (s === "overdue") overdue++;
+    if (s === "today") dueToday++;
+  }
+  return { open, overdue, dueToday, done, total: list.length };
+}
+
 export const TICKET_TYPES = ["Mobile", "PDF", "Hard ticket", "Season card"] as const;
 
 export const CURRENCIES = [

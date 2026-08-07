@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "tsx lib/parsers/parsers.test.ts && tsx lib/money.test.ts && tsx lib/discord.test.ts && tsx lib/mail.test.ts && tsx lib/venueCountry.test.ts && tsx lib/mailNoise.test.ts && tsx lib/pushover.test.ts && tsx lib/discordRelay.test.ts"
+    "test": "tsx lib/parsers/parsers.test.ts && tsx lib/money.test.ts && tsx lib/discord.test.ts && tsx lib/mail.test.ts && tsx lib/venueCountry.test.ts && tsx lib/mailNoise.test.ts && tsx lib/pushover.test.ts && tsx lib/discordRelay.test.ts && tsx lib/todo.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
