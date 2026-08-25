@@ -2,7 +2,7 @@ import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
 import { RawEmail } from "./parsers";
 import { supabaseAdmin } from "./supabase";
-import { isBulkNoise } from "./mailNoise";
+import { shouldOpen, senderDomain } from "./mailFilter";
 
 // ─────────────────────────────────────────────────────────────
 // Reads new mail WITHOUT changing anything about the mailbox.
@@ -45,7 +45,12 @@ const DEFAULT_STATE_KEY = MAILBOX;
 // only where a sale could plausibly be turns that around completely.
 const ENVELOPE_WINDOW = 4000; // UIDs whose envelopes one run may scan
 const ENVELOPE_BATCH = 1000;  // per FETCH command
-const MAX_BODIES = 15;        // full sources per run — unchanged, still the cap that matters
+// Measured on this account rather than guessed: a run opening 15 bodies and
+// scanning ~2,800 envelopes finished in 12s, so a body costs ~0.4s, not the ~2s
+// the original estimate assumed. 40 bodies ≈ 16s on top of an ~8s envelope
+// sweep — comfortably inside the 60s function budget, and with the allow-list
+// keeping candidates to a few hundred a day, enough to stay at the front.
+const MAX_BODIES = 40;
 // Leave the rest of the 60s budget for parsing and for the caller's own work.
 const ENVELOPE_MS = 20_000;
 
@@ -114,6 +119,7 @@ export async function fetchNewEmails(opts: FetchOptions = {}): Promise<FetchResu
   let uidValidity = 0;
   let info = "";
   let skipped = 0;
+  let topSkipped = "";
 
   await client.connect();
 
@@ -150,6 +156,11 @@ export async function fetchNewEmails(opts: FetchOptions = {}): Promise<FetchResu
     // what's worth opening. `scannedTo` tracks how far we actually got, so a
     // run cut short by the clock resumes rather than skipping.
     const candidates: number[] = [];
+    // Who is being passed over, and how often. Skipping is invisible by nature,
+    // so the counts go back in the response: a ticket platform appearing here
+    // means the filter is wrong, and that should be readable rather than
+    // waiting to be noticed by an alert that never came.
+    const skippedBy = new Map<string, number>();
     let scannedTo = mark.last_uid;
     for (let lo = from; lo <= windowTop; lo += ENVELOPE_BATCH) {
       if (Date.now() - started > ENVELOPE_MS) break;
@@ -159,13 +170,20 @@ export async function fetchNewEmails(opts: FetchOptions = {}): Promise<FetchResu
         // Trust the UID, not the range.
         const uid = Number(msg.uid);
         if (uid < lo || uid > hi) continue;
-        if (!isBulkNoise({ from: msg.envelope?.from?.[0]?.address, subject: msg.envelope?.subject })) {
+        const env = { from: msg.envelope?.from?.[0]?.address, subject: msg.envelope?.subject };
+        if (shouldOpen(env)) {
           candidates.push(uid);
+        } else {
+          const d = senderDomain(env.from) || "(no sender)";
+          skippedBy.set(d, (skippedBy.get(d) ?? 0) + 1);
         }
       }
       scannedTo = hi;
     }
     candidates.sort((a, b) => a - b);
+    topSkipped = [...skippedBy.entries()]
+      .sort((a, b) => b[1] - a[1]).slice(0, 4)
+      .map(([d, n]) => `${d}×${n}`).join(", ");
 
     // ── Phase 2: bodies, for candidates only ──
     // More candidates than the cap? Take the oldest, and hold the watermark at
@@ -211,7 +229,8 @@ export async function fetchNewEmails(opts: FetchOptions = {}): Promise<FetchResu
     const behind = uidNext - 1 - to;
     info =
       `uid ${from}..${to}, ${emails.length} opened of ${candidates.length} candidate(s), ` +
-      `${skipped} skipped as noise` + (behind > 0 ? `, ${behind} still behind` : "");
+      `${skipped} not opened` + (topSkipped ? ` [${topSkipped}]` : "") +
+      (behind > 0 ? `, ${behind} still behind` : "");
   } finally {
     lock.release();
     await client.logout();

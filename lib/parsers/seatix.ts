@@ -3,7 +3,11 @@ import { Parser, ParsedSale, RawEmail } from "./types";
 // ─────────────────────────────────────────────────────────────
 // SEATIX / GIGSBERG SALE PARSER
 //
-// Forwarded via catch-all → detect by BODY CONTENT. Markers:
+// Detected by BODY CONTENT, not by sender. (This once said the mail arrives
+// "forwarded via catch-all", and lib/mailFilter.ts was designed around that
+// claim; sampling the mailbox showed it actually arrives straight from
+// sales@seatiks.com. Body detection is kept anyway — it costs nothing and still
+// works if a forwarded copy ever does turn up.) Markers:
 //   - "Sale Confirmation" header
 //   - "Financial Summary" section
 //   - labelled table: Event / Date / Venue / Quantity / Section / Row / Seats

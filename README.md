@@ -227,6 +227,35 @@ than spaces. These mails are nested tables; with everything on one line a
 label/value pair like `Venue:` / the address can't be told apart from the next
 cell. Wrapped values (`<br>` mid-address) are rejoined on the dangling comma.
 
+## The poller reads envelopes first
+
+This catch-all mailbox takes thousands of messages a day and almost none of them
+are sales. Bodies cost ~0.4s each and a few dozen fit in a run; envelopes come
+back at ~450/second. So the poller scans envelopes across a wide window and pays
+for bodies only where a sale could plausibly be — otherwise it processes ~180
+messages an hour against a thousand arriving, falls behind every hour, and never
+reaches a sale. That is not hypothetical: it happened twice.
+
+**The filter is an ALLOW-list**, and it started as the opposite. The deny-list
+was chosen on the belief — stated in this README, and in `seatix.ts` — that
+Seatix mail arrives *forwarded through the catch-all*, so filtering on sender
+could drop real sales. Measuring the mailbox disproved it: sales arrive straight
+from their own domains (`automated@orders.viagogo.com`, `sales@seatiks.com`).
+Meanwhile a deny-list has to be taught every new flood and is silently useless
+until it is — which is exactly what happened when 2,397 "Confirm your RSVP"
+messages arrived from a domain nobody had seen before and the poller fell behind
+again.
+
+Measured over 2,954 real envelopes: **315 opened (10.7 %), and no platform mail
+among the skipped**. That second number is the one that matters.
+
+An allow-list's own risk is the mirror image — a sale from somewhere unexpected
+gets skipped, and skipping is invisible. Two things answer that: a subject test
+that opens sale-shaped mail whatever the sender (`Sale confirmation …`, `you
+sold`, `Order - 651889083`), and the poller reporting its **top skipped sender
+domains** in the cron response, so an unfamiliar platform surfaces somewhere
+rather than nowhere.
+
 ## Two traps that only showed up when the poller actually ran
 
 Both typechecked, built, and looked correct on the page. Neither survived one
