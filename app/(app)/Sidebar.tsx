@@ -15,7 +15,8 @@ export default function Sidebar() {
   const todoCount = todoCounts(todos);
 
   const NAV = [
-    { href: "/", label: "Events", badge: 0, alert: false },
+    { href: "/", label: "Overview", badge: 0, alert: false },
+    { href: "/events", label: "Events", badge: 0, alert: false },
     { href: "/cashflow", label: "Cashflow", badge: 0, alert: false },
     { href: "/charts", label: "Charts", badge: 0, alert: false },
     { href: "/review", label: "Review", badge: reviewCount, alert: false },
@@ -27,7 +28,8 @@ export default function Sidebar() {
 
   return (
     <aside className="sidebar">
-      <div className="logo">
+      {/* The logo is the way home, the way it is on every other site. */}
+      <Link className="logo" href="/">
         <span className="logo-mark" aria-hidden>
           <svg viewBox="0 0 64 64">
             <defs>
@@ -41,7 +43,7 @@ export default function Sidebar() {
           </svg>
         </span>
         {APP_NAME}
-      </div>
+      </Link>
       <button className="nav-btn nav-add" onClick={openAdd}>+ Add purchase</button>
       {/* Money that isn't a ticket batch — reachable from every page, because
           "I just got paid for the LA28 codes" happens wherever you are. */}

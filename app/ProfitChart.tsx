@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { type Ticket, realizedProfit, realizedCost } from "@/lib/supabase";
+import { type CashEntry, type Ticket } from "@/lib/supabase";
+import { buildMonths, monthTotals } from "@/lib/monthly";
 
 // ─────────────────────────────────────────────────────────────
 // A small dashboard, not two loose charts:
@@ -25,43 +26,6 @@ const MUTED = "#6f6f6f";
 const INK = "#ededed";
 
 type Bucket = { key: string; label: string; profit: number; count: number; cum: number };
-
-function saleDate(t: Ticket): Date {
-  return new Date(t.sold_at ?? t.event_date ?? t.created_at);
-}
-function monthKey(d: Date): string {
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-}
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-function monthLabel(key: string): string {
-  const [y, m] = key.split("-");
-  return `${MONTHS[+m - 1]} ${y.slice(2)}`;
-}
-
-/** Sold rows with a known cost, bucketed by month, gap-filled so the x-axis is real time. */
-function bucketByMonth(rows: { t: Ticket; profit: number }[]): Bucket[] {
-  if (rows.length === 0) return [];
-  const sums = new Map<string, { profit: number; count: number }>();
-  for (const { t, profit } of rows) {
-    const k = monthKey(saleDate(t));
-    const cur = sums.get(k) ?? { profit: 0, count: 0 };
-    cur.profit += profit;
-    cur.count += 1;
-    sums.set(k, cur);
-  }
-  const keys = [...sums.keys()].sort();
-  const [fy, fm] = keys[0].split("-").map(Number);
-  const [ly, lm] = keys[keys.length - 1].split("-").map(Number);
-  const out: Bucket[] = [];
-  let cum = 0;
-  for (let y = fy, m = fm; y < ly || (y === ly && m <= lm); m === 12 ? (m = 1, y++) : m++) {
-    const k = `${y}-${String(m).padStart(2, "0")}`;
-    const hit = sums.get(k) ?? { profit: 0, count: 0 };
-    cum += hit.profit;
-    out.push({ key: k, label: monthLabel(k), profit: hit.profit, count: hit.count, cum });
-  }
-  return out;
-}
 
 /** Column: 4px rounded data-end, square foot on the baseline. */
 function barPath(x: number, y: number, w: number, h: number, up: boolean): string {
@@ -106,15 +70,27 @@ const CH = 250;
 const BH = 250;
 const PAD = { top: 16, right: 16, bottom: 26, left: 46 };
 
-export default function ProfitChart({ tickets }: { tickets: Ticket[] }) {
-  // Priced sold rows: realized profit needs both a sale and a known cost.
-  const priced = useMemo(
-    () => tickets.filter((t) => t.qty_sold > 0 && t.buy_price > 0).map((t) => ({
-      t, profit: realizedProfit(t), cost: realizedCost(t),
-    })),
-    [tickets]
+export default function ProfitChart({
+  tickets,
+  entries = [],
+  includeCash = false,
+}: {
+  tickets: Ticket[];
+  entries?: CashEntry[];
+  /** Fold manual income and costs into the bars and the running total. */
+  includeCash?: boolean;
+}) {
+  // Bucketing lives in lib/monthly.ts so this chart and the overview page can
+  // never disagree about which month something landed in.
+  const months = useMemo(
+    () => buildMonths(tickets, entries, { includeCash }),
+    [tickets, entries, includeCash]
   );
-  const data = useMemo(() => bucketByMonth(priced.map(({ t, profit }) => ({ t, profit }))), [priced]);
+  const data: Bucket[] = useMemo(
+    () => months.map((m) => ({ key: m.key, label: m.label, profit: m.net, count: m.sales, cum: m.cum })),
+    [months]
+  );
+  const totals = useMemo(() => monthTotals(months), [months]);
   const [hover, setHover] = useState<{ i: number; chart: "bar" | "line" } | null>(null);
 
   const awaitingCost = tickets.filter((t) => t.qty_sold > 0 && !t.buy_price).length;
@@ -126,10 +102,11 @@ export default function ProfitChart({ tickets }: { tickets: Ticket[] }) {
     </div>
   );
 
-  // KPIs (profit = revenue − invested, by construction).
-  const revenue = priced.reduce((s, r) => s + r.t.sell_price, 0);
-  const invested = priced.reduce((s, r) => s + r.cost, 0);
-  const profit = priced.reduce((s, r) => s + r.profit, 0);
+  // KPIs come from the same buckets as the bars, so the headline can never
+  // disagree with what's plotted underneath it.
+  const revenue = totals.revenue + (includeCash ? totals.cashIn : 0);
+  const invested = includeCash ? totals.invested : totals.cost;
+  const profit = totals.net;
   const roi = invested > 0 ? (profit / invested) * 100 : 0;
 
   if (data.length === 0) {
@@ -181,9 +158,10 @@ export default function ProfitChart({ tickets }: { tickets: Ticket[] }) {
 
       {/* ── KPI row ── */}
       <div className="kpis">
-        <Kpi label="Total profit" value={`${fmt(profit)} EUR`} tone={profit >= 0 ? "pos" : "neg"} />
+        <Kpi label={includeCash ? "Net (incl. cashflow)" : "Total profit"}
+             value={`${fmt(profit)} EUR`} tone={profit >= 0 ? "pos" : "neg"} />
         <Kpi label="Revenue" value={`${fmt(revenue)} EUR`} />
-        <Kpi label="Invested" value={`${fmt(invested)} EUR`} />
+        <Kpi label={includeCash ? "Invested + costs" : "Invested"} value={`${fmt(invested)} EUR`} />
         <Kpi label="ROI" value={`${roi.toFixed(1)}%`} tone={roi >= 0 ? "pos" : "neg"} />
       </div>
 
@@ -193,7 +171,9 @@ export default function ProfitChart({ tickets }: { tickets: Ticket[] }) {
         <figcaption className="cap-split">
           <div>
             <span className="chart-title">Total value over time</span>
-            <span className="chart-sub">cumulative profit · EUR</span>
+            <span className="chart-sub">
+              cumulative {includeCash ? "net, tickets + cashflow" : "profit"} · EUR
+            </span>
           </div>
           <div className={"chart-hero " + (last.cum >= 0 ? "profit-pos" : "profit-neg")}>
             {last.cum >= 0 ? "+" : "−"}{fmt(Math.abs(last.cum))}
@@ -247,7 +227,7 @@ export default function ProfitChart({ tickets }: { tickets: Ticket[] }) {
       {/* ── Profit by month ── */}
       <figure className="chart-card">
         <figcaption>
-          <span className="chart-title">Profit by month</span>
+          <span className="chart-title">{includeCash ? "Net by month" : "Profit by month"}</span>
           <span className="chart-sub">EUR</span>
         </figcaption>
         <svg viewBox={`0 0 ${W} ${BH}`} className="chart-svg" role="img"

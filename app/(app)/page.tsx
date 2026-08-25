@@ -1,147 +1,217 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { type Ticket, realizedProfit, filterByPeriod, openInvestment, awaitingPayout } from "@/lib/supabase";
+import Link from "next/link";
+import {
+  filterByPeriod, filterEntriesByPeriod, openInvestment, awaitingPayout,
+  realizedProfit, todoCounts, todayISO, signedAmount,
+  type Ticket,
+} from "@/lib/supabase";
+import { buildMonths, monthTotals, type MonthBucket } from "@/lib/monthly";
+import ProfitChart from "@/app/ProfitChart";
 import { useDash } from "./DashContext";
 import PeriodTabs from "./PeriodTabs";
-import TicketsTable from "./TicketsTable";
-import ExportButtons from "./ExportButtons";
-import { PERIODS } from "@/lib/supabase";
 
-// Fold to a comparable form: lower-case AND strip diacritics, so "cesko" finds
-// "česko" and "rosalia" finds "ROSALÍA".
-function fold(s: string): string {
-  return s.toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "");
-}
-function haystack(t: Ticket): string {
-  return fold(
-    [t.event_name, t.location, t.section, t.seat_row, t.seats, t.order_ref, t.comment, t.ticket_type, t.event_date]
-      .filter(Boolean)
-      .join(" ")
-  );
-}
+// ─────────────────────────────────────────────────────────────
+// Overview — the page the logo leads to.
+//
+// It answers "how am I doing" in one screen and then lets you dig: the month
+// table is the interactive part, and every row opens to show the actual sales
+// and cash entries behind its numbers. Nothing here is a new source of truth —
+// the months come from lib/monthly.ts, the same function the charts use, so the
+// two can never tell different stories about the same month.
+// ─────────────────────────────────────────────────────────────
 
-export default function EventsPage() {
-  const { tickets, loading, error, period } = useDash();
-  const [search, setSearch] = useState("");
+const money = (n: number) => (n === 0 ? "—" : n.toLocaleString("en-US", { maximumFractionDigits: 0 }));
+const signed = (n: number) => (n === 0 ? "—" : `${n > 0 ? "+" : "−"}${Math.abs(Math.round(n)).toLocaleString("en-US")}`);
+const tone = (n: number) => (n > 0 ? "profit-pos" : n < 0 ? "profit-neg" : "");
+
+export default function OverviewPage() {
+  const { tickets, entries, todos, loading, error, period } = useDash();
+  const [open, setOpen] = useState<string | null>(null);
 
   const inPeriod = useMemo(() => filterByPeriod(tickets, period), [tickets, period]);
+  const cash = useMemo(() => filterEntriesByPeriod(entries, period), [entries, period]);
+  // Newest month first: the current one is what you came to look at.
+  const months = useMemo(
+    () => [...buildMonths(inPeriod, cash)].reverse(),
+    [inPeriod, cash]
+  );
+  const totals = useMemo(() => monthTotals(months), [months]);
 
-  // One normalized string per row, rebuilt only when the data changes — so each
-  // keystroke is a handful of substring checks, not a re-read of every field.
-  const index = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const t of tickets) m.set(t.id, haystack(t));
-    return m;
-  }, [tickets]);
-
-  // Every word must match (AND), in any order, anywhere in the row — so
-  // "bad bunny madrid" finds it. Search is global: it looks past the period
-  // filter so "find this event" is never hidden by the current window.
-  const tokens = useMemo(() => fold(search.trim()).split(/\s+/).filter(Boolean), [search]);
-  const searching = tokens.length > 0;
-  const shown = useMemo(() => {
-    if (!searching) return inPeriod;
-    return tickets.filter((t) => {
-      const h = index.get(t.id) ?? "";
-      return tokens.every((tok) => h.includes(tok));
-    });
-  }, [searching, tickets, inPeriod, tokens, index]);
-
-  const priced = inPeriod.filter((t) => t.qty_sold > 0 && t.buy_price > 0);
-  const totalProfit = priced.reduce((s, t) => s + realizedProfit(t), 0);
-  const soldRows = inPeriod.filter((t) => t.qty_sold > 0).length;
-  const totalListed = inPeriod.filter((t) => t.status === "listed").length;
-  const problems = inPeriod.filter((t) => t.flagged).length;
-
-  // ── The two money-still-out figures ──
-  // Both are balances, not flows, so both run over EVERY row and ignore the
-  // period tabs: cash sunk into a purchase two years ago is still sunk today,
-  // and a payout owed since May is still owed. A window could only ever report
-  // them too low. `· all rows` marks them while a period is selected, so the
-  // stats that don't follow the tabs say so instead of looking broken.
+  // Balances, deliberately over EVERY row rather than the period — money still
+  // out is out regardless of the window, same as on the Events page.
   const invested = useMemo(() => openInvestment(tickets), [tickets]);
   const awaiting = useMemo(() => awaitingPayout(tickets), [tickets]);
-  const allRows = period !== "all" && <span className="stat-caveat"> · all rows</span>;
-
-  // Describe what the export contains, so the file's header line is honest about
-  // whether it's everything or just the current search / period slice.
-  const periodLabel = PERIODS.find((p) => p.key === period)?.label ?? "All";
-  const exportScope = searching
-    ? `Search "${search.trim()}" (${shown.length} rows)`
-    : period === "all"
-    ? "All events"
-    : `Last ${periodLabel}`;
+  const todo = useMemo(() => todoCounts(todos, todayISO()), [todos]);
+  const problems = tickets.filter((t) => t.flagged).length;
+  const unlinked = tickets.filter((t) => t.needs_review).length;
 
   return (
     <>
       <div className="toolbar">
-        <h1>All Events</h1>
+        <h1>Overview</h1>
         <PeriodTabs />
-        <div className="summary">
-          <div className="stat"><div className="label">Sold</div><div className="value">{soldRows}</div></div>
-          <div className="stat"><div className="label">Listed</div><div className="value">{totalListed}</div></div>
-          <div className="stat">
-            <div className="label">Problems</div>
-            <div className={"value " + (problems > 0 ? "stat-problem" : "")}>{problems || "—"}</div>
-          </div>
-          <div className="stat"
-               title="Your own money still in tickets, at cost: unsold stock, plus the cost of sold rows whose payout hasn't landed. Ticking Paid on a row takes its cost out. Counts every row, not just the selected period.">
-            <div className="label">
-              Invested now
-              {invested.unpriced > 0
-                ? <span className="stat-caveat"> · {invested.unpriced} unpriced</span>
-                : allRows}
-            </div>
-            <div className="value">{invested.total > 0 ? `${invested.total.toFixed(0)} EUR` : "—"}</div>
-          </div>
-          <div className="stat"
-               title="Revenue already earned that hasn't reached the bank — the sell price of every sold row not yet ticked Paid. Counts every row, not just the selected period.">
-            <div className="label">
-              Awaiting payout
-              {awaiting.count > 0 && <span className="stat-caveat"> · {awaiting.count} rows</span>}
-            </div>
-            <div className="value">{awaiting.total > 0 ? `${awaiting.total.toFixed(0)} EUR` : "—"}</div>
-          </div>
-          <div className="stat">
-            <div className="label">
-              Total profit
-              {priced.length < soldRows && <span className="stat-caveat"> · {priced.length}/{soldRows} priced</span>}
-            </div>
-            {priced.length === 0 ? (
-              <div className="value unknown" title="No sold row has a buy price yet">—</div>
-            ) : (
-              <div className={"value " + (totalProfit >= 0 ? "profit-pos" : "profit-neg")}>
-                {totalProfit.toFixed(2)} EUR
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="table-toolbar">
-        <input className="search" placeholder="Search — event, location, seat, order (multiple words ok)…"
-               value={search} onChange={(e) => setSearch(e.target.value)} />
-        {searching && <span className="search-count">{shown.length} found</span>}
-        <ExportButtons rows={shown} scope={exportScope} />
       </div>
 
       {error && (
-        <div className="error-banner">
-          <strong>Couldn’t load your rows.</strong> {error}
-        </div>
+        <div className="error-banner"><strong>Couldn’t load your rows.</strong> {error}</div>
       )}
 
       {loading ? (
         <div className="empty">Loading…</div>
-      ) : error ? null : tickets.length === 0 ? (
-        <div className="empty">No events yet. Add a purchase, or wait for a sale email to land.</div>
-      ) : shown.length === 0 ? (
-        <div className="empty">
-          {searching ? "Nothing matches your search." : "No events in this period. Try a longer range."}
-        </div>
-      ) : (
-        <TicketsTable rows={shown} />
+      ) : error ? null : (
+        <>
+          {/* Headline: what the period made, and what is still out. */}
+          <div className="kpis">
+            <div className="kpi">
+              <div className="kpi-label">Net this period</div>
+              <div className={"kpi-value " + tone(totals.net)}>{signed(totals.net)} EUR</div>
+              <div className="kpi-sub">
+                {money(totals.ticketProfit)} tickets
+                {totals.cashIn - totals.cashOut !== 0 && ` · ${signed(totals.cashIn - totals.cashOut)} cash`}
+              </div>
+            </div>
+            <div className="kpi">
+              <div className="kpi-label">Invested now</div>
+              <div className="kpi-value">{money(invested.total)} EUR</div>
+              <div className="kpi-sub">all rows, not the period</div>
+            </div>
+            <div className="kpi">
+              <div className="kpi-label">Awaiting payout</div>
+              <div className="kpi-value">{money(awaiting.total)} EUR</div>
+              <div className="kpi-sub">{awaiting.count} row{awaiting.count === 1 ? "" : "s"} unpaid</div>
+            </div>
+            <div className="kpi">
+              <div className="kpi-label">Sold this period</div>
+              <div className="kpi-value">{totals.sales || "—"}</div>
+              <div className="kpi-sub">{money(totals.revenue)} EUR revenue</div>
+            </div>
+          </div>
+
+          {/* Anything that needs a person. Only shown when there IS something —
+              a row of permanent zeroes teaches you to stop reading it. */}
+          {(unlinked > 0 || problems > 0 || todo.overdue > 0 || invested.unpriced > 0) && (
+            <div className="needs-row">
+              {unlinked > 0 && (
+                <Link className="needs-chip" href="/review">
+                  <strong>{unlinked}</strong> sale{unlinked === 1 ? "" : "s"} to link
+                </Link>
+              )}
+              {invested.unpriced > 0 && (
+                <Link className="needs-chip is-warn" href="/events">
+                  <strong>{invested.unpriced}</strong> without a buy price
+                </Link>
+              )}
+              {problems > 0 && (
+                <Link className="needs-chip is-bad" href="/events">
+                  <strong>{problems}</strong> flagged problem{problems === 1 ? "" : "s"}
+                </Link>
+              )}
+              {todo.overdue > 0 && (
+                <Link className="needs-chip is-bad" href="/todo">
+                  <strong>{todo.overdue}</strong> to-do past deadline
+                </Link>
+              )}
+            </div>
+          )}
+
+          <ProfitChart tickets={inPeriod} entries={cash} includeCash />
+
+          {/* ── Month by month, click to open ── */}
+          <div className="section-head">
+            <h2>Month by month</h2>
+            <span className="hint" style={{ margin: 0 }}>click a month to see what’s in it</span>
+          </div>
+
+          {months.length === 0 ? (
+            <div className="empty">Nothing in this period yet.</div>
+          ) : (
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Month</th>
+                    <th className="amount-col">Sales</th>
+                    <th className="amount-col">Revenue</th>
+                    <th className="amount-col">Cost</th>
+                    <th className="amount-col">Ticket profit</th>
+                    <th className="amount-col">Cash in</th>
+                    <th className="amount-col">Cash out</th>
+                    <th className="amount-col">Net</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {months.map((m) => (
+                    <MonthRows key={m.key} m={m} open={open === m.key}
+                               onToggle={() => setOpen(open === m.key ? null : m.key)} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
+function MonthRows({ m, open, onToggle }: { m: MonthBucket; open: boolean; onToggle: () => void }) {
+  const empty = m.sales === 0 && m.entries.length === 0;
+  return (
+    <>
+      <tr className={"month-row" + (open ? " is-open" : "") + (empty ? " is-empty" : "")}
+          onClick={empty ? undefined : onToggle}>
+        <td>
+          <span className="month-caret">{empty ? "" : open ? "▾" : "▸"}</span> {m.label}
+        </td>
+        <td className="nums amount-col">{m.sales || "—"}</td>
+        <td className="nums amount-col">{money(m.revenue)}</td>
+        <td className="nums amount-col">{money(m.cost)}</td>
+        <td className={"nums amount-col " + tone(m.ticketProfit)}>{signed(m.ticketProfit)}</td>
+        <td className="nums amount-col amount-in">{m.cashIn ? `+${money(m.cashIn)}` : "—"}</td>
+        <td className="nums amount-col amount-out">{m.cashOut ? `−${money(m.cashOut)}` : "—"}</td>
+        <td className={"nums amount-col " + tone(m.net)}><strong>{signed(m.net)}</strong></td>
+      </tr>
+
+      {open && (
+        <tr className="month-detail">
+          <td colSpan={8}>
+            {m.tickets.length > 0 && (
+              <div className="detail-block">
+                <div className="detail-head">Sales</div>
+                {[...m.tickets]
+                  .sort((a, b) => (b.sold_at ?? "").localeCompare(a.sold_at ?? ""))
+                  .map((t: Ticket) => (
+                    <div className="detail-line" key={t.id}>
+                      <span className="detail-when nums">{(t.sold_at ?? t.event_date ?? "").slice(0, 10)}</span>
+                      <span className="detail-what">{t.event_name}</span>
+                      <span className="detail-qty nums">{t.qty_sold}/{t.qty_total}</span>
+                      <span className="nums">{t.sell_price.toFixed(0)}</span>
+                      <span className="nums unknown">−{t.buy_price.toFixed(0)}</span>
+                      <span className={"nums " + tone(realizedProfit(t))}>{signed(realizedProfit(t))}</span>
+                    </div>
+                  ))}
+              </div>
+            )}
+            {m.entries.length > 0 && (
+              <div className="detail-block">
+                <div className="detail-head">Cashflow</div>
+                {[...m.entries]
+                  .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at))
+                  .map((e) => (
+                    <div className="detail-line" key={e.id}>
+                      <span className="detail-when nums">{e.occurred_at}</span>
+                      <span className="detail-what">{e.description}</span>
+                      <span className={"nums " + (e.kind === "expense" ? "amount-out" : "amount-in")}>
+                        {signed(signedAmount(e))} {e.currency}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </td>
+        </tr>
       )}
     </>
   );
