@@ -19,6 +19,14 @@ import {
 export type MonthBucket = {
   key: string;   // "2026-08", sortable
   label: string; // "Aug 26"
+  // ── Money going OUT: what was bought this month ──
+  // A separate dimension from sales, and deliberately so: a batch bought in
+  // June and sold in July is an investment in June and a sale in July. Without
+  // this, buying is invisible until the month it happens to sell in.
+  purchases: number;
+  /** Total paid for those batches. Does NOT touch `net` — see below. */
+  invested: number;
+  purchaseRows: Ticket[];
   /** Sold ticket rows with a known cost — the ones profit can be read from. */
   sales: number;
   revenue: number;      // ticket sell price
@@ -46,6 +54,37 @@ export function monthKeyOf(iso: string | null | undefined): string | null {
 /** Where a ticket sits on the timeline: when it sold, else the event, else creation. */
 export function saleMonth(t: Pick<Ticket, "sold_at" | "event_date" | "created_at">): string | null {
   return monthKeyOf(t.sold_at) ?? monthKeyOf(t.event_date) ?? monthKeyOf(t.created_at);
+}
+
+/**
+ * When the money went out — `purchase_date` and nothing else.
+ *
+ * No fallback, and that was measured rather than assumed. `created_at` looks
+ * like an obvious stand-in until you check: 150 of the 168 priced rows in this
+ * book were bulk-imported on a single day, with event dates spread from March
+ * 2026 to March 2027. Falling back to creation would have piled 121,030 EUR of
+ * buying into one month that saw almost none of it — a column that looks
+ * informative and is fiction. `event_date` is no better: it's when the match is
+ * played, often months after the money left.
+ *
+ * So a purchase with no date is not placed anywhere. See undatedInvestment().
+ */
+export function purchaseMonth(t: Pick<Ticket, "purchase_date">): string | null {
+  return monthKeyOf(t.purchase_date);
+}
+
+/**
+ * What was bought but can't be placed on the timeline, because nobody recorded
+ * when. Reported as one figure beside the months rather than smeared across
+ * them: money spent that we can't date is a gap in the data, and the way to
+ * show a gap is to name it.
+ */
+export function undatedInvestment(tickets: Ticket[]): { total: number; rows: number } {
+  let total = 0, rows = 0;
+  for (const t of tickets) {
+    if (t.buy_price > 0 && !purchaseMonth(t)) { total += t.buy_price; rows++; }
+  }
+  return { total, rows };
 }
 
 export function monthLabel(key: string): string {
@@ -85,10 +124,23 @@ export function buildMonths(
 ): MonthBucket[] {
   const acc = new Map<string, MonthBucket>();
   const blank = (key: string): MonthBucket => ({
-    key, label: monthLabel(key), sales: 0, revenue: 0, cost: 0, ticketProfit: 0,
+    key, label: monthLabel(key), purchases: 0, invested: 0, purchaseRows: [],
+    sales: 0, revenue: 0, cost: 0, ticketProfit: 0,
     cashIn: 0, cashOut: 0, cashNet: 0, net: 0, cum: 0, tickets: [], entries: [],
   });
   const at = (key: string) => acc.get(key) ?? acc.set(key, blank(key)).get(key)!;
+
+  // Purchases: every priced row, sold or not. Stock bought and still sitting
+  // there is money spent, and the point of the column is to show that.
+  for (const t of tickets) {
+    if (t.buy_price <= 0) continue;
+    const key = purchaseMonth(t);
+    if (!key) continue;
+    const b = at(key);
+    b.purchases++;
+    b.invested += t.buy_price;
+    b.purchaseRows.push(t);
+  }
 
   for (const t of tickets) {
     if (t.qty_sold <= 0 || t.buy_price <= 0) continue;
@@ -115,6 +167,10 @@ export function buildMonths(
   const out = fillGaps([...acc.keys()]).map((k) => acc.get(k) ?? blank(k));
   let cum = 0;
   for (const b of out) {
+    // `invested` is NOT subtracted here, on purpose. This app's profit model
+    // counts a cost only when the tickets it bought actually sell — buying
+    // stock is money moved, not money lost — so a month of heavy buying must
+    // not read as a loss. It's shown beside the result, never inside it.
     b.net = b.ticketProfit + (includeCash ? b.cashNet : 0);
     cum += b.net;
     b.cum = cum;
@@ -126,6 +182,8 @@ export function buildMonths(
 export function monthTotals(months: MonthBucket[]) {
   const t = months.reduce(
     (a, m) => ({
+      purchases: a.purchases + m.purchases,
+      spent: a.spent + m.invested,
       sales: a.sales + m.sales,
       revenue: a.revenue + m.revenue,
       cost: a.cost + m.cost,
@@ -134,7 +192,7 @@ export function monthTotals(months: MonthBucket[]) {
       cashOut: a.cashOut + m.cashOut,
       net: a.net + m.net,
     }),
-    { sales: 0, revenue: 0, cost: 0, ticketProfit: 0, cashIn: 0, cashOut: 0, net: 0 }
+    { purchases: 0, spent: 0, sales: 0, revenue: 0, cost: 0, ticketProfit: 0, cashIn: 0, cashOut: 0, net: 0 }
   );
   // ROI on what was actually put in: ticket cost plus any manual costs that the
   // net already carries. Without a cost there is no return to express.
