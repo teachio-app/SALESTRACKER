@@ -51,8 +51,19 @@ const ENVELOPE_BATCH = 1000;  // per FETCH command
 // sweep — comfortably inside the 60s function budget, and with the allow-list
 // keeping candidates to a few hundred a day, enough to stay at the front.
 const MAX_BODIES = 40;
-// Leave the rest of the 60s budget for parsing and for the caller's own work.
-const ENVELOPE_MS = 20_000;
+
+// ── The deadline that actually matters is the CALLER'S ────────────────
+// Vercel allows 60s, but the thing invoking this is an external pinger, and
+// cron-job.org gives up at 30 and disables a job that keeps failing. That is not
+// hypothetical: both jobs died on 10 August and sat Inactive for two weeks while
+// the mailbox filled, because the old poller opened 15 bodies at ~2s each and
+// overran 30s. The function was never the constraint — the client was.
+//
+// So the run is bounded end to end, not just per phase. Whatever isn't reached
+// stays for the next run; the watermark only ever advances over what was
+// actually examined, which is what makes stopping early safe.
+const RUN_MS = 18_000;
+const ENVELOPE_MS = 9_000;
 
 type Watermark = { uid_validity: number; last_uid: number };
 
@@ -195,8 +206,15 @@ export async function fetchNewEmails(opts: FetchOptions = {}): Promise<FetchResu
       wanted = candidates.slice(0, maxBodies);
       examinedTo = wanted[wanted.length - 1];
     }
+    let lastOpened = mark.last_uid;
 
     for (const uid of wanted) {
+      // Out of time: stop here and let the watermark sit at the last message
+      // actually opened. The rest is picked up next run, not skipped.
+      if (Date.now() - started > RUN_MS) {
+        examinedTo = emails.length ? lastOpened : mark.last_uid;
+        break;
+      }
       for await (const msg of client.fetch(String(uid), { source: true, uid: true }, { uid: true })) {
         if (Number(msg.uid) !== uid || !msg.source) continue;
         const parsed = await simpleParser(msg.source as Buffer);
@@ -207,6 +225,7 @@ export async function fetchNewEmails(opts: FetchOptions = {}): Promise<FetchResu
           html: typeof parsed.html === "string" ? parsed.html : "",
           date: parsed.date || new Date(),
         });
+        lastOpened = uid;
       }
     }
     const to = examinedTo;
