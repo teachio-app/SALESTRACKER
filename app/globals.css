@@ -317,6 +317,14 @@ body {
 .amount-in { color: var(--good); font-weight: 500; }
 .amount-out { color: var(--bad); font-weight: 500; }
 .amount-col { text-align: right; white-space: nowrap; }
+/* `.table thead th` sets text-align:left and outweighs a lone `.amount-col`
+   (0,1,2 against 0,1,0), so the heading sat left while its figures sat right and
+   the whole column read as crooked. Match the specificity rather than reach for
+   !important. */
+.table thead th.amount-col { text-align: right; }
+/* Figures line up digit under digit: tabular-nums is already on `.nums`, but the
+   money cells also need a consistent right edge, which the padding gives them. */
+.table td.amount-col, .table th.amount-col { padding-right: 14px; }
 .entry-desc { font-weight: 500; }
 .entry-sub { color: var(--text-3); font-size: 11.5px; }
 .tag {
