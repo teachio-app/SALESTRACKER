@@ -115,6 +115,19 @@ export default function TicketsTable({ rows, showLink = false }: { rows: Ticket[
             <option value="">Set status…</option>
             {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
+          {/* The imported rows carry no purchase date — it was never in the
+              export — so the only way it gets in is by hand. Doing that one row
+              at a time across 150 rows is why this is here: search for an
+              event, select the lot, set the date once. */}
+          <label className="bulk-date">
+            <span>Bought</span>
+            <input type="date" aria-label="Set purchase date for the selected rows"
+                   onChange={(e) => {
+                     const v = e.target.value;
+                     if (v) bulk(async () => patchMany(selectedIds, { purchase_date: v }));
+                     e.target.value = "";
+                   }} />
+          </label>
           {/* Clearing the review flag in bulk is the fast way out of a backlog
               of poller rows that have no purchase to link to. */}
           <button className="btn btn-sm btn-ghost" onClick={() => bulk(async () =>
