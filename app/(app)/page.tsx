@@ -155,18 +155,17 @@ export default function OverviewPage() {
           ) : (
             <div className="table-wrap">
               <table className="table">
+                {/* Two different clocks, on purpose: Invested is the month the
+                    money went out, everything to its right is the month the
+                    EVENT is played. A sale in August for a match next June
+                    belongs to June — that's when the result happened. */}
                 <thead>
                   <tr>
                     <th>Month</th>
-                    {/* Bought and Invested come first: money goes out before it
-                        comes back, and a month of buying used to look empty. */}
-                    <th className="amount-col">Bought</th>
                     <th className="amount-col">Invested</th>
-                    <th className="amount-col">Sold</th>
+                    <th className="amount-col">Sales</th>
                     <th className="amount-col">Revenue</th>
                     <th className="amount-col">Profit</th>
-                    <th className="amount-col">Cash</th>
-                    <th className="amount-col">Net</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -193,18 +192,17 @@ function MonthRows({ m, open, onToggle }: { m: MonthBucket; open: boolean; onTog
         <td>
           <span className="month-caret">{empty ? "" : open ? "▾" : "▸"}</span> {m.label}
         </td>
-        <td className="nums amount-col">{m.purchases || "—"}</td>
-        <td className="nums amount-col amount-out">{m.invested ? `−${money(m.invested)}` : "—"}</td>
+        <td className="nums amount-col amount-out" title={m.purchases ? `${m.purchases} batch(es)` : undefined}>
+          {m.invested ? `−${money(m.invested)}` : "—"}
+        </td>
         <td className="nums amount-col">{m.sales || "—"}</td>
         <td className="nums amount-col">{money(m.revenue)}</td>
-        <td className={"nums amount-col " + tone(m.ticketProfit)}>{signed(m.ticketProfit)}</td>
-        <td className={"nums amount-col " + tone(m.cashNet)}>{signed(m.cashNet)}</td>
-        <td className={"nums amount-col " + tone(m.net)}><strong>{signed(m.net)}</strong></td>
+        <td className={"nums amount-col " + tone(m.ticketProfit)}><strong>{signed(m.ticketProfit)}</strong></td>
       </tr>
 
       {open && (
         <tr className="month-detail">
-          <td colSpan={8}>
+          <td colSpan={5}>
             {m.purchaseRows.length > 0 && (
               <div className="detail-block">
                 <div className="detail-head">Bought — {money(m.invested)} EUR</div>
@@ -226,12 +224,13 @@ function MonthRows({ m, open, onToggle }: { m: MonthBucket; open: boolean; onTog
             )}
             {m.tickets.length > 0 && (
               <div className="detail-block">
-                <div className="detail-head">Sales</div>
+                {/* Dated by the EVENT, matching the row above it. */}
+                <div className="detail-head">Events this month — {m.sales} sold</div>
                 {[...m.tickets]
-                  .sort((a, b) => (b.sold_at ?? "").localeCompare(a.sold_at ?? ""))
+                  .sort((a, b) => (a.event_date ?? "").localeCompare(b.event_date ?? ""))
                   .map((t: Ticket) => (
                     <div className="detail-line" key={t.id}>
-                      <span className="detail-when nums">{(t.sold_at ?? t.event_date ?? "").slice(0, 10)}</span>
+                      <span className="detail-when nums">{(t.event_date ?? "").slice(0, 10)}</span>
                       <span className="detail-what">{t.event_name}</span>
                       <span className="detail-qty nums">{t.qty_sold}/{t.qty_total}</span>
                       <span className="nums">{t.sell_price.toFixed(0)}</span>
@@ -241,6 +240,9 @@ function MonthRows({ m, open, onToggle }: { m: MonthBucket; open: boolean; onTog
                   ))}
               </div>
             )}
+            {/* Cash has no column any more, but it's still worth seeing when a
+                month is opened — it just doesn't belong in a table about
+                tickets bought and events played. */}
             {m.entries.length > 0 && (
               <div className="detail-block">
                 <div className="detail-head">Cashflow</div>

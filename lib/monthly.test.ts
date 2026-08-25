@@ -4,7 +4,7 @@
 // disagreement is what you'd notice, not the cause.
 
 import {
-  buildMonths, monthTotals, monthKeyOf, saleMonth, undatedInvestment,
+  buildMonths, monthTotals, monthKeyOf, eventMonth, undatedInvestment,
 } from "./monthly";
 import type { CashEntry, Ticket } from "./supabase";
 
@@ -39,18 +39,21 @@ console.log("\nwhich month is this in");
 check("sliced, not parsed — no timezone can shift it", monthKeyOf("2026-03-01T00:30:00Z"), "2026-03");
 check("a plain date", monthKeyOf("2026-03-01"), "2026-03");
 check("nothing", monthKeyOf(null), null);
-check("sold_at wins", saleMonth({ sold_at: "2026-05-02T00:00:00Z", event_date: "2026-09-01", created_at: "2026-01-01" }), "2026-05");
-check("no sale date → the event (imported rows have no sold_at)",
-  saleMonth({ sold_at: null, event_date: "2026-09-01", created_at: "2026-01-01" }), "2026-09");
-check("neither → creation", saleMonth({ sold_at: null, event_date: null, created_at: "2026-01-01" }), "2026-01");
+// A result belongs to the month the EVENT is played, not the month it sold in:
+// selling in May for a September match is September's result, not May's.
+check("the event date wins over the sale date",
+  eventMonth({ sold_at: "2026-05-02T00:00:00Z", event_date: "2026-09-01", created_at: "2026-01-01" }), "2026-09");
+check("no event date → fall back to the sale",
+  eventMonth({ sold_at: "2026-05-02T00:00:00Z", event_date: null, created_at: "2026-01-01" }), "2026-05");
+check("neither → creation", eventMonth({ sold_at: null, event_date: null, created_at: "2026-01-01" }), "2026-01");
 
 console.log("\nbuckets");
 // No purchase_date on these: this block is about the SALE dimension, and a
 // purchase would add months of its own and make the assertions ambiguous.
 const tickets = [
-  ticket({ sold_at: "2026-03-05T00:00:00Z", buy_price: 100, sell_price: 150 }),
-  ticket({ sold_at: "2026-03-20T00:00:00Z", buy_price: 200, sell_price: 260 }),
-  ticket({ sold_at: "2026-05-01T00:00:00Z", buy_price: 100, sell_price: 80 }),
+  ticket({ event_date: "2026-03-05", sold_at: "2026-01-05T00:00:00Z", buy_price: 100, sell_price: 150 }),
+  ticket({ event_date: "2026-03-20", sold_at: "2026-02-20T00:00:00Z", buy_price: 200, sell_price: 260 }),
+  ticket({ event_date: "2026-05-01", sold_at: "2026-01-01T00:00:00Z", buy_price: 100, sell_price: 80 }),
 ];
 const entries = [
   entry({ occurred_at: "2026-03-10", kind: "income", amount: 300 }),
@@ -71,7 +74,7 @@ console.log("\npurchases — money going out, on its own timeline");
 // Bought in February, sold in March: an investment in one month and a sale in
 // the other. Before this, buying was invisible until the month it sold in.
 const bought = buildMonths(
-  [ticket({ purchase_date: "2026-02-14", sold_at: "2026-03-05T00:00:00Z", buy_price: 500, sell_price: 700 })],
+  [ticket({ purchase_date: "2026-02-14", event_date: "2026-03-05", sold_at: "2026-02-20T00:00:00Z", buy_price: 500, sell_price: 700 })],
   []
 );
 check("both months exist", bought.map((b) => b.key), ["2026-02", "2026-03"]);
@@ -114,9 +117,19 @@ console.log("\nwhat is left out");
 // A payout with no buy price has no known profit; counting it as if the tickets
 // were free would flatter every chart. Same rule as everywhere else in the app.
 check("a sold row with no buy price contributes nothing",
-  buildMonths([ticket({ sold_at: "2026-03-01T00:00:00Z", buy_price: 0, sell_price: 240 })]).length, 0);
+  buildMonths([ticket({ event_date: "2026-03-01", buy_price: 0, sell_price: 240 })]).length, 0);
 check("an unsold row contributes nothing",
-  buildMonths([ticket({ sold_at: null, event_date: "2026-03-01", qty_sold: 0 })]).length, 0);
+  buildMonths([ticket({ sold_at: null, event_date: "2026-03-01", qty_sold: 0, purchase_date: null })]).length, 0);
+
+// The case the whole change is for.
+const ahead = buildMonths([ticket({
+  purchase_date: "2026-08-01", event_date: "2027-06-10", sold_at: "2026-08-20T00:00:00Z",
+  buy_price: 400, sell_price: 900,
+})]);
+check("bought and sold in August, event next June → two clocks",
+  ahead.filter((b) => b.invested || b.sales).map((b) => [b.key, b.invested, b.sales]),
+  [["2026-08", 400, 0], ["2027-06", 0, 1]]);
+check("...and the profit lands with the event", ahead[ahead.length - 1].ticketProfit, 500);
 check("no data at all → no months", buildMonths([], []), []);
 
 console.log("\ntotals agree with the buckets");

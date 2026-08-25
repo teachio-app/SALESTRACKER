@@ -51,9 +51,20 @@ export function monthKeyOf(iso: string | null | undefined): string | null {
   return /^\d{4}-\d{2}$/.test(k) ? k : null;
 }
 
-/** Where a ticket sits on the timeline: when it sold, else the event, else creation. */
-export function saleMonth(t: Pick<Ticket, "sold_at" | "event_date" | "created_at">): string | null {
-  return monthKeyOf(t.sold_at) ?? monthKeyOf(t.event_date) ?? monthKeyOf(t.created_at);
+/**
+ * Where a RESULT sits on the timeline: the month the event is played.
+ *
+ * Not the month it sold in, and the difference is the whole point. Selling a
+ * ticket in August for a match next June is not August's result — the money is
+ * owed, the event hasn't happened, and lumping it into August makes a quiet
+ * month look busy and next June look empty. A result belongs to the event it
+ * came from.
+ *
+ * sold_at and created_at are only fallbacks for a row with no event date at
+ * all; every sold row in this book has one.
+ */
+export function eventMonth(t: Pick<Ticket, "sold_at" | "event_date" | "created_at">): string | null {
+  return monthKeyOf(t.event_date) ?? monthKeyOf(t.sold_at) ?? monthKeyOf(t.created_at);
 }
 
 /**
@@ -144,7 +155,7 @@ export function buildMonths(
 
   for (const t of tickets) {
     if (t.qty_sold <= 0 || t.buy_price <= 0) continue;
-    const key = saleMonth(t);
+    const key = eventMonth(t);
     if (!key) continue;
     const b = at(key);
     b.sales++;
