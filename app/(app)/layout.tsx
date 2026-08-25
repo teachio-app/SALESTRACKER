@@ -139,6 +139,40 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     load(true);
   }
 
+  // ── Bulk actions ── the confirm lives here, once, so every caller gets it.
+  async function removeMany(ids: string[]) {
+    if (!ids.length) return;
+    if (!confirm(`Delete ${ids.length} row${ids.length === 1 ? "" : "s"}? This cannot be undone.`)) return;
+    const gone = new Set(ids);
+    setTickets((prev) => prev.filter((x) => !gone.has(x.id)));
+    const res = await fetch("/api/tickets", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+    if (!res.ok) {
+      const b = await res.json().catch(() => ({}));
+      setError(`Delete failed: ${b.error ?? res.status}`);
+    }
+    load(true);
+  }
+
+  async function patchMany(ids: string[], patch: Partial<Ticket>) {
+    if (!ids.length) return;
+    const hit = new Set(ids);
+    setTickets((prev) => prev.map((x) => (hit.has(x.id) ? { ...x, ...patch } : x)));
+    const res = await fetch("/api/tickets", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids, ...patch }),
+    });
+    if (!res.ok) {
+      const b = await res.json().catch(() => ({}));
+      setError(`Update failed: ${b.error ?? res.status}`);
+    }
+    load(true);
+  }
+
   // ── Cash entries ── same optimistic pattern as tickets, own error slot.
   async function saveEntry(e: Partial<CashEntry>) {
     const method = e.id ? "PATCH" : "POST";
@@ -240,6 +274,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       });
     },
     openLink: (t) => setLinking(t),
+    removeMany,
+    patchMany,
     // Move the review row's sell side onto the chosen purchase, then delete the
     // review row. Optimistic drop of the review row keeps the list steady.
     linkSale: async (reviewRow, purchase) => {

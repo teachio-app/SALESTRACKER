@@ -334,6 +334,26 @@ body {
 .kind-btn.is-in { background: rgba(12, 163, 12, 0.14); border-color: var(--good); color: #6fd36f; }
 .kind-btn.is-out { background: rgba(208, 59, 59, 0.14); border-color: var(--bad); color: #ff8080; }
 
+/* ── Bulk selection ────────────────────────────────────────────────────
+   The action bar appears only when something is selected; a permanent row of
+   destructive buttons is a hazard rather than a feature. */
+.bulk-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  background: var(--accent-dim); border: 1px solid rgba(57, 135, 229, 0.35);
+  border-radius: var(--radius-lg); padding: 9px 12px; margin-bottom: 10px;
+}
+.bulk-count { font-weight: 600; font-size: 13px; margin-right: 4px; }
+.bulk-bar .status-select { min-width: 116px; }
+.bulk-clear { margin-left: auto; }
+
+.pick-cell { width: 34px; text-align: center; }
+/* The tint sits on the <td> so it paints over the zebra AND the hover shade,
+   the same trick the flagged rows use. */
+.table tbody tr.is-picked td { background: rgba(57, 135, 229, 0.14); }
+.table tbody tr.is-picked:hover td { background: rgba(57, 135, 229, 0.2); }
+/* A flagged row that's also selected keeps its red — the warning outranks it. */
+.table tbody tr.is-flagged.is-picked td { background: rgba(208, 59, 59, 0.18); }
+
 /* ── To do ─────────────────────────────────────────────────────────────
    A list, not a table: the note is the content and everything else is a
    trimming, so nothing gets a column of its own. */

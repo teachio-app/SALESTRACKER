@@ -34,7 +34,18 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   const db = supabaseAdmin();
-  const { id, ...patch } = await req.json();
+  const { id, ids, ...patch } = await req.json();
+
+  // Bulk edit from the table's selection. One statement rather than one request
+  // per row: twenty selected rows shouldn't mean twenty round trips, and a
+  // half-finished loop would leave the table in a state nobody asked for.
+  if (Array.isArray(ids)) {
+    if (ids.length === 0) return NextResponse.json({ error: "no rows given" }, { status: 400 });
+    const { data, error } = await db.from("tickets").update(clean(patch)).in("id", ids).select("id");
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true, updated: data?.length ?? 0 });
+  }
+
   const { data, error } = await db.from("tickets").update(clean(patch)).eq("id", id).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json(data);
@@ -42,7 +53,15 @@ export async function PATCH(req: Request) {
 
 export async function DELETE(req: Request) {
   const db = supabaseAdmin();
-  const { id } = await req.json();
+  const { id, ids } = await req.json();
+
+  if (Array.isArray(ids)) {
+    if (ids.length === 0) return NextResponse.json({ error: "no rows given" }, { status: 400 });
+    const { data, error } = await db.from("tickets").delete().in("id", ids).select("id");
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true, deleted: data?.length ?? 0 });
+  }
+
   const { error } = await db.from("tickets").delete().eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });

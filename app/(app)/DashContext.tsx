@@ -27,6 +27,12 @@ export type DashCtx = {
   /** Merge a flagged sale into an existing purchase, then drop the sale row. */
   linkSale: (reviewRow: Ticket, purchase: Ticket) => Promise<void>;
 
+  // ── Bulk actions on a table selection ──
+  // One request for the whole set, not one per row: a half-finished loop over
+  // twenty rows leaves the table in a state nobody chose.
+  removeMany: (ids: string[]) => Promise<void>;
+  patchMany: (ids: string[], patch: Partial<Ticket>) => Promise<void>;
+
   // ── Cashflow: manual money in / out, ticket-related or not ──
   entries: CashEntry[];
   /** Kept apart from `error` so a missing `entries` table can't blank the events page. */

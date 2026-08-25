@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { type Ticket, realizedProfit, realizedRoi } from "@/lib/supabase";
 import { useDash } from "./DashContext";
 
@@ -32,8 +32,15 @@ function value(t: Ticket, key: SortKey): number | string {
 }
 
 export default function TicketsTable({ rows, showLink = false }: { rows: Ticket[]; showLink?: boolean }) {
-  const { remove, setStatus, togglePaid, toggleFlag, openEdit, openSell, copyRow, openLink, save } = useDash();
+  const {
+    remove, setStatus, togglePaid, toggleFlag, openEdit, openSell, copyRow, openLink, save,
+    removeMany, patchMany,
+  } = useDash();
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "date", dir: 1 });
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  // Anchor for shift-click, so a range can be selected the way every other
+  // table on a computer does it.
+  const anchor = useRef<string | null>(null);
 
   const sorted = useMemo(() => {
     const out = [...rows];
@@ -45,6 +52,41 @@ export default function TicketsTable({ rows, showLink = false }: { rows: Ticket[
     return out;
   }, [rows, sort]);
 
+  // A selection only ever means rows currently on screen. Searching, changing
+  // the period, or deleting must not leave invisible rows armed for the next
+  // bulk action — a delete that takes rows you can't see is unforgivable.
+  const visible = useMemo(() => new Set(sorted.map((t) => t.id)), [sorted]);
+  const selected = useMemo(() => sorted.filter((t) => picked.has(t.id)), [sorted, picked]);
+  const selectedIds = selected.map((t) => t.id);
+  const allPicked = sorted.length > 0 && selected.length === sorted.length;
+
+  function toggleRow(id: string, shiftKey: boolean) {
+    setPicked((prev) => {
+      const next = new Set([...prev].filter((x) => visible.has(x)));
+      // Shift-click fills in everything between the last click and this one.
+      if (shiftKey && anchor.current && anchor.current !== id) {
+        const order = sorted.map((t) => t.id);
+        const a = order.indexOf(anchor.current), b = order.indexOf(id);
+        if (a !== -1 && b !== -1) {
+          const [lo, hi] = a < b ? [a, b] : [b, a];
+          const add = !next.has(id);
+          for (let i = lo; i <= hi; i++) add ? next.add(order[i]) : next.delete(order[i]);
+          return next;
+        }
+      }
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+    anchor.current = id;
+  }
+
+  const clear = () => { setPicked(new Set()); anchor.current = null; };
+
+  async function bulk(run: () => Promise<void>) {
+    await run();
+    clear(); // a stale selection after an action is how the next one goes wrong
+  }
+
   function toggleSort(key: SortKey) {
     setSort((s) => (s.key === key ? { key, dir: (s.dir * -1) as 1 | -1 } : { key, dir: 1 }));
   }
@@ -54,10 +96,49 @@ export default function TicketsTable({ rows, showLink = false }: { rows: Ticket[
   );
 
   return (
-    <div className="table-wrap">
+    <>
+      {/* Only present once something is selected — an always-visible bar of
+          destructive buttons is a hazard, not a feature. */}
+      {selected.length > 0 && (
+        <div className="bulk-bar">
+          <span className="bulk-count">{selected.length} selected</span>
+          <button className="btn btn-sm btn-ghost" onClick={() => bulk(async () =>
+            patchMany(selectedIds, { paid_out: true }))}>Mark paid</button>
+          <button className="btn btn-sm btn-ghost" onClick={() => bulk(async () =>
+            patchMany(selectedIds, { paid_out: false }))}>Mark unpaid</button>
+          <select className="status-select" value="" aria-label="Set status for the selected rows"
+                  onChange={(e) => {
+                    const v = e.target.value as Ticket["status"] | "";
+                    if (v) bulk(async () => patchMany(selectedIds, { status: v }));
+                    e.target.value = "";
+                  }}>
+            <option value="">Set status…</option>
+            {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+          {/* Clearing the review flag in bulk is the fast way out of a backlog
+              of poller rows that have no purchase to link to. */}
+          <button className="btn btn-sm btn-ghost" onClick={() => bulk(async () =>
+            patchMany(selectedIds, { needs_review: false }))}>Clear review</button>
+          <button className="btn btn-sm btn-danger" onClick={() => bulk(async () =>
+            removeMany(selectedIds))}>Delete {selected.length}</button>
+          <button className="btn btn-sm btn-ghost bulk-clear" onClick={clear}>Cancel</button>
+        </div>
+      )}
+
+      <div className="table-wrap">
       <table className="table">
         <thead>
           <tr>
+            <th className="pick-cell">
+              <input type="checkbox" className="paid-check" checked={allPicked}
+                     ref={(el) => {
+                       // Indeterminate can only be set from JS, and it's what
+                       // tells "some" apart from "none" at a glance.
+                       if (el) el.indeterminate = selected.length > 0 && !allPicked;
+                     }}
+                     onChange={() => (allPicked ? clear() : setPicked(new Set(sorted.map((t) => t.id))))}
+                     title={allPicked ? "Deselect all" : "Select all shown"} />
+            </th>
             <Th k="event">Event</Th>
             <Th k="date">Date</Th>
             <th>Location / Seat</th>
@@ -80,8 +161,15 @@ export default function TicketsTable({ rows, showLink = false }: { rows: Ticket[
             const noCost = t.qty_sold > 0 && !t.buy_price;
             const noProfit = unsold || noCost;
             const seat = seatLine(t);
+            const isPicked = picked.has(t.id);
             return (
-              <tr key={t.id} className={t.flagged ? "is-flagged" : undefined}>
+              <tr key={t.id}
+                  className={[t.flagged ? "is-flagged" : "", isPicked ? "is-picked" : ""].filter(Boolean).join(" ") || undefined}>
+                <td className="pick-cell">
+                  <input type="checkbox" className="paid-check" checked={isPicked}
+                         onChange={(e) => toggleRow(t.id, (e.nativeEvent as MouseEvent).shiftKey)}
+                         aria-label={`Select ${t.event_name}`} />
+                </td>
                 <td>
                   <div className="event-name">
                     {t.needs_review && <span className="review-badge" title="Poller wasn't sure — check this">review</span>}
@@ -160,6 +248,7 @@ export default function TicketsTable({ rows, showLink = false }: { rows: Ticket[
           })}
         </tbody>
       </table>
-    </div>
+      </div>
+    </>
   );
 }
