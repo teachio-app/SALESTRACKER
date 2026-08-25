@@ -366,6 +366,16 @@ body {
 
 /* Month rows open to show what's inside them. */
 .month-row { cursor: pointer; }
+/* Results sit on their event month, so months that haven't happened yet appear
+   above the current one. Mark today's row, and let the ones ahead recede. */
+.table tbody tr.month-row.is-now td { box-shadow: inset 3px 0 0 0 var(--accent); font-weight: 500; }
+.month-row.is-future { color: var(--text-2); }
+.month-tag {
+  margin-left: 8px; padding: 1px 7px; border-radius: 4px;
+  background: var(--accent-dim); color: var(--accent);
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.month-tag.is-ahead { background: var(--panel-2); color: var(--text-3); font-weight: 600; }
 .month-row.is-empty { cursor: default; color: var(--text-3); }
 .month-row.is-open td { background: var(--panel-2); }
 .month-caret { display: inline-block; width: 12px; color: var(--text-3); }

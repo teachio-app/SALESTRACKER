@@ -45,6 +45,7 @@ export default function OverviewPage() {
   // Bought, but with no purchase date to place it in a month — named rather
   // than spread across months it didn't happen in.
   const undated = useMemo(() => undatedInvestment(inPeriod), [inPeriod]);
+  const nowKey = todayISO().slice(0, 7);
   const awaiting = useMemo(() => awaitingPayout(tickets), [tickets]);
   const todo = useMemo(() => todoCounts(todos, todayISO()), [todos]);
   const problems = tickets.filter((t) => t.flagged).length;
@@ -170,7 +171,7 @@ export default function OverviewPage() {
                 </thead>
                 <tbody>
                   {months.map((m) => (
-                    <MonthRows key={m.key} m={m} open={open === m.key}
+                    <MonthRows key={m.key} m={m} now={nowKey} open={open === m.key}
                                onToggle={() => setOpen(open === m.key ? null : m.key)} />
                   ))}
                 </tbody>
@@ -183,14 +184,22 @@ export default function OverviewPage() {
   );
 }
 
-function MonthRows({ m, open, onToggle }: { m: MonthBucket; open: boolean; onToggle: () => void }) {
+function MonthRows({
+  m, now, open, onToggle,
+}: { m: MonthBucket; now: string; open: boolean; onToggle: () => void }) {
   const empty = m.sales === 0 && m.entries.length === 0 && m.purchases === 0;
+  // Sales sit on their EVENT month, so months that haven't happened yet appear
+  // above the current one. Without a marker the top row reads as "now" and this
+  // month looks empty — say which row is today.
+  const when = m.key === now ? "now" : m.key > now ? "future" : "past";
   return (
     <>
-      <tr className={"month-row" + (open ? " is-open" : "") + (empty ? " is-empty" : "")}
+      <tr className={`month-row is-${when}` + (open ? " is-open" : "") + (empty ? " is-empty" : "")}
           onClick={empty ? undefined : onToggle}>
         <td>
           <span className="month-caret">{empty ? "" : open ? "▾" : "▸"}</span> {m.label}
+          {when === "now" && <span className="month-tag">this month</span>}
+          {when === "future" && <span className="month-tag is-ahead">upcoming</span>}
         </td>
         <td className="nums amount-col amount-out" title={m.purchases ? `${m.purchases} batch(es)` : undefined}>
           {m.invested ? `−${money(m.invested)}` : "—"}
