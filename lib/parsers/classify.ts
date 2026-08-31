@@ -6,6 +6,7 @@ export type MailKind =
   | "sale"             // a real sale confirmation → parse it
   | "transfer_pending" // "please transfer your tickets" reminder → ignore
   | "payout"           // "we've paid you" / payment sent → ignore
+  | "delivered"        // "your tickets were delivered" → ignore, the sale is already recorded
   | "marketing"        // newsletters, promos → ignore
   | "listing"          // listing live / price changed → ignore
   | "security"         // login alerts, password, 2FA → ignore
@@ -58,6 +59,27 @@ const RULES: Rule[] = [
     test: (_e, b) =>
       has(b, /your listing (?:is|went) live|price (?:updated|changed|drop)|listing (?:created|updated)/i) &&
       !has(b, /you sold|sale confirmation/i),
+  },
+
+  // ── Delivery confirmations ──
+  // "Your tickets were delivered for order# 652748632". These arrive AFTER the
+  // sale and carry the same fingerprints the 2026 sale format is recognised by
+  // — Sale Info, Payment Total, OrderID # — so without this rule they classify
+  // as a sale and try to insert the order a second time.
+  //
+  // Nothing broke visibly, because external_id dedupes a repeat of an order
+  // already in the book. It only shows when the sale email itself was missed:
+  // then the delivery mail creates the row instead, dated the day of DELIVERY
+  // rather than the sale, and with no seat detail to match a purchase by.
+  //
+  // Placed above the sale rule because first match wins, and guarded on the
+  // sale-side wording so a genuine confirmation that happens to mention
+  // delivery is still a sale.
+  {
+    kind: "delivered",
+    test: (_e, b) =>
+      has(b, /tickets\s+were\s+delivered|thank you for delivering/i) &&
+      !has(b, /confirming your sale|you sold\b|sale confirmation/i),
   },
 
   // ── Sale confirmations — the ones we actually want ──

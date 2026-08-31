@@ -191,6 +191,44 @@ If you see a charge listed and believe it's incorrect, submit a dispute.
 
 Copyright © 2026 viagogo. All rights reserved`;
 
+
+// ── Delivery confirmation, NOT a sale ─────────────────────────────────
+// Arrives after the tickets are handed over, and carries the same three marks
+// the 2026 sale format is recognised by — "Sale Info", "Payment Total",
+// "OrderID #" — which is exactly why it used to classify as a sale and try to
+// insert the order a second time. Pasted from the real mail (order 652748632).
+export const VIAGOGO_DELIVERED_SUBJECT =
+  "Your tickets were delivered for order# 652748632 - US Open Tennis: Day Grounds Pass";
+export const VIAGOGO_DELIVERED = `viagogo
+Sports Concerts Theatre
+
+Petr:
+Thank you for delivering the tickets for order 652748632.
+When will you get paid?
+
+You'll be paid 5 to 8 business days after the event takes place to make sure the buyer had no problems with the tickets.
+You will be notified by email when your payment has been processed.
+Payment Info
+
+Subtotal	  €615.30
+Service fee	- €0.00
+Payment Total	  €615.30
+
+Payment option:
+We'll send your payment directly to:
+IBAN (Envoy - Euro): **************89
+
+Sale Info
+US Open Tennis: Day Grounds Pass
+Saturday, September 05, 2026 | 10:55
+USTA Billie Jean King National Tennis Center - Complex, Flushing, US
+OrderID # 652748632
+2 Ticket(s)
+Section: Grounds Pass
+Row | Seat(s) -
+
+Copyright © 2026 viagogo. All rights reserved`;
+
 export function asEmail(text: string, subject = "") {
   return { from: "catchall@thevortex.beauty", subject, text, html: "", date: new Date() };
 }

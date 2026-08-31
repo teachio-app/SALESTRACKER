@@ -4,6 +4,7 @@
 import { parseViagogo } from "./viagogo";
 import { parseSeatix } from "./seatix";
 import { classify } from "./classify";
+import { processEmail } from "./index";
 import { parseViagogoPayment, isViagogoPayment } from "./viagogoPayment";
 import { parseLa28Order, isLa28Order, parseLa28Date } from "./la28";
 import { htmlToText, pickExtractSource } from "../htmlText";
@@ -12,6 +13,7 @@ import {
   VIAGOGO_SALE_V2, VIAGOGO_SALE_V2_SUBJECT,
   VIAGOGO_SALE_V3, VIAGOGO_SALE_V3_SUBJECT,
   VIAGOGO_PAYMENT, VIAGOGO_PAYMENT_SUBJECT, asEmail,
+  VIAGOGO_DELIVERED, VIAGOGO_DELIVERED_SUBJECT,
   LA28_CRICKET, LA28_CRICKET_SUBJECT, LA28_CRICKET_HTML,
   LA28_ATHLETICS, LA28_ATHLETICS_SUBJECT,
   LA28_MULTI, LA28_MULTI_SUBJECT,
@@ -189,6 +191,21 @@ check("month-first when the weekday agrees", parseLa28Date("Sun, 07.09.2028, 09:
 check("weekday overrides month-first when it disagrees", parseLa28Date("Thu, 07.09.2028"), "2028-09-07");
 check("no weekday → month-first (US sender)", parseLa28Date("07.09.2028"), "2028-07-09");
 check("day > 12 needs no weekday", parseLa28Date("07.28.2028"), "2028-07-28");
+
+console.log("\nA delivery confirmation is not a sale");
+// It carries Sale Info + Payment Total + OrderID #, the exact fingerprint the
+// 2026 sale format is recognised by, so it used to classify as a sale and try
+// to insert the order again. external_id hid that — until a sale email was
+// missed, and the delivery mail created the row instead, dated the day of
+// delivery and carrying no seat detail to match a purchase by.
+const delivered = asEmail(VIAGOGO_DELIVERED, VIAGOGO_DELIVERED_SUBJECT);
+check("classified as a delivery", classify(delivered), "delivered");
+check("and therefore skipped", processEmail(delivered).action, "skip");
+// The guard must not swallow real sales that mention delivery in passing.
+check("a genuine sale is still a sale", classify(asEmail(VIAGOGO_SALE)), "sale");
+check("...and the V3 send-your-tickets format", classify(asEmail(VIAGOGO_SALE_V3, VIAGOGO_SALE_V3_SUBJECT)), "sale");
+check("...and the V2 Sale Info format", classify(asEmail(VIAGOGO_SALE_V2, VIAGOGO_SALE_V2_SUBJECT)), "sale");
+check("...and seatix", classify(asEmail(SEATIX_SALE)), "sale");
 
 console.log("\nCross-parser: neither parser may claim the other's email");
 check("viagogo parser on seatix mail → null", parseViagogo(asEmail(SEATIX_SALE)), null);
