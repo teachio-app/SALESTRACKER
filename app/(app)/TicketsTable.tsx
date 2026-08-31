@@ -239,12 +239,22 @@ export default function TicketsTable({ rows, showLink = false }: { rows: Ticket[
                 </td>
                 <td>
                   <div className="actions">
-                    {showLink && t.needs_review && (
+                    {/* A row waiting on review can be settled from ANY table,
+                        not only the review queue — that's usually where you
+                        notice it, and making you go elsewhere to say "this is
+                        fine" is how rows sit flagged for weeks. Link stays on
+                        the review page, where merging is the job at hand. */}
+                    {t.needs_review && (
                       <>
-                        <button className="btn btn-sm btn-primary" onClick={() => openLink(t)}
-                                title="Merge this sale into an existing purchase">Link</button>
-                        <button className="btn btn-sm btn-ghost" onClick={() => save({ id: t.id, needs_review: false })}
-                                title="No purchase to link — keep it as a standalone sale">No purchase</button>
+                        {showLink && (
+                          <button className="btn btn-sm btn-primary" onClick={() => openLink(t)}
+                                  title="Merge this sale into an existing purchase">Link</button>
+                        )}
+                        <button className="btn btn-sm btn-confirm"
+                                onClick={() => save({ id: t.id, needs_review: false })}
+                                title="Everything's filled in — keep this row and take it out of Review">
+                          ✓ Confirm
+                        </button>
                       </>
                     )}
                     <button className="btn btn-sm btn-primary" onClick={() => openSell(t)}>Sell</button>

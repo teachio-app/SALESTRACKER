@@ -118,6 +118,24 @@ export default function PurchaseModal({
         </header>
 
         <div className="modal-body">
+          {/* A row the poller wasn't sure about. It sits at the TOP because it's
+              the reason this modal is open: fill the details in below, tick
+              this, save — and the row stays exactly where it is, minus the
+              flag. Previously the only way out of Review was a separate page. */}
+          {ticket.needs_review && (
+            <div className={"review-box" + (form.needs_review === false ? " is-done" : "")}>
+              <label className="review-check">
+                <input type="checkbox" checked={form.needs_review === false}
+                       onChange={(e) => set("needs_review", !e.target.checked)} />
+                <span>
+                  {form.needs_review === false
+                    ? "Confirmed — this leaves Review when you save"
+                    : "This sale is waiting in Review. Tick once the details below are right."}
+                </span>
+              </label>
+            </div>
+          )}
+
           <div className="grid-3">
             <Field label="Event name" required>
               <input value={form.event_name ?? ""} onChange={(e) => set("event_name", e.target.value)}
