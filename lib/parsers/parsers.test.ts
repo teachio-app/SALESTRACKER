@@ -10,6 +10,7 @@ import { parseLa28Order, isLa28Order, parseLa28Date } from "./la28";
 import { htmlToText, pickExtractSource } from "../htmlText";
 import {
   SEATIX_SALE, SEATIX_SALE_TRAP, VIAGOGO_SALE, VIAGOGO_CONCERT,
+  SEATIX_SALE_USD, SEATIX_SALE_USD_SUBJECT,
   VIAGOGO_SALE_V2, VIAGOGO_SALE_V2_SUBJECT,
   VIAGOGO_SALE_V3, VIAGOGO_SALE_V3_SUBJECT,
   VIAGOGO_PAYMENT, VIAGOGO_PAYMENT_SUBJECT, asEmail,
@@ -71,6 +72,24 @@ check("venue", st?.location, "Estadio Metropolitano");
 check("qty", st?.qty, 2);
 check("payout", st?.sellPrice, 820);
 check("faceValue", st?.faceValue, 560);
+
+console.log("\nparseSeatix() — the same layout settling in dollars");
+// The money regexes had € hard-coded. A dollar sale matched nothing, payout
+// came back null, and the mail was filed as an unreadable stub.
+const su = parseSeatix(asEmail(SEATIX_SALE_USD, SEATIX_SALE_USD_SUBJECT));
+check("recognised at all", su !== null, true);
+check("payout read despite the $ sign", su?.sellPrice, 548.32);
+check("currency comes from the mail, not a default", su?.currency, "USD");
+check("eventName", su?.eventName, "Andrea Bocelli Cardiff");
+check("venue", su?.location, "Principality Stadium - Cardiff");
+check("section", su?.section, "Floor Q");
+check("seatRow", su?.seatRow, "23");
+check("seats", su?.seats, "19-20");
+check("qty", su?.qty, 2);
+check("faceValue", su?.faceValue, 548.32);
+// The euro mail must keep working, and keep saying EUR.
+check("euro sale still reads EUR", parseSeatix(asEmail(SEATIX_SALE))?.currency, "EUR");
+check("euro payout still 675", parseSeatix(asEmail(SEATIX_SALE))?.sellPrice, 675);
 
 console.log("\nparseViagogo() — concert at an arena (no 'World Cup', no 'Stadium')");
 const c = parseViagogo(asEmail(VIAGOGO_CONCERT));

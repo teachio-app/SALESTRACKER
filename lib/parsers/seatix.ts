@@ -11,7 +11,7 @@ import { Parser, ParsedSale, RawEmail } from "./types";
 //   - "Sale Confirmation" header
 //   - "Financial Summary" section
 //   - labelled table: Event / Date / Venue / Quantity / Section / Row / Seats
-//   - euro formatted as "675.00€" (symbol last)
+//   - amount with the symbol LAST: "675.00€", "548.32$"
 //
 // Note: body says "Platform: Gigsberg"; kept as source "seatix" per your naming.
 // This layout uniquely exposes face value + payout, so we fill buy_price too.
@@ -41,11 +41,30 @@ function parseSeatixDate(raw: string | null): string | null {
   return `${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
 }
 
-// "675.00€" or "1500.00€" → 675.0 / 1500.0
-function parseEuro(raw: string | null): number | null {
+// Seatix writes the symbol AFTER the number: "675.00€", "548.32$", "410.00£".
+//
+// The symbol used to be hard-coded as €, which quietly broke the day a sale
+// settled in dollars: every money regex missed, payout came back null, the
+// parser returned null, and the poller filed the mail as an unreadable stub
+// called "Sale confirmation #8826071B" — no event, no price, and no alert.
+// Seatix fronts several platforms (this one came through Vividseats), so the
+// currency is whatever the platform pays in and has to be read, not assumed.
+const MONEY = String.raw`[\d.,]+\s*[€$£]`;
+const SYMBOL_TO_CODE: Record<string, string> = { "€": "EUR", $: "USD", "£": "GBP" };
+
+function parseMoney(raw: string | null): number | null {
   if (!raw) return null;
   const n = parseFloat(raw.replace(/[^\d.,]/g, "").replace(/,/g, ""));
   return isNaN(n) ? null : n;
+}
+
+/** Which currency the amounts are in. Defaults to EUR only if nothing says. */
+function currencyOf(...raw: (string | null)[]): string {
+  for (const r of raw) {
+    const sym = r?.match(/[€$£]/)?.[0];
+    if (sym) return SYMBOL_TO_CODE[sym];
+  }
+  return "EUR";
 }
 
 export const parseSeatix: Parser = (email: RawEmail): ParsedSale | null => {
@@ -74,11 +93,14 @@ export const parseSeatix: Parser = (email: RawEmail): ParsedSale | null => {
   const row = clean(first(body, /^[ \t]*Row\b[ \t]*\n?[ \t]*([^\n]+)/im), /^Row\s*/i);
   const seats = clean(first(body, /^[ \t]*Seats?\b[ \t]*\n?[ \t]*([^\n]+)/im), /^Seats?\s*/i);
 
-  const payoutStr = first(body, /^[ \t]*Payout\b[ \t]*\n?[ \t]*([\d.,]+\s*€)/im);
-  const faceStr = first(body, /^[ \t]*Total\s+face\s+value\b[ \t]*\n?[ \t]*([\d.,]+\s*€)/im);
+  const money = (label: string) =>
+    first(body, new RegExp(String.raw`^[ \t]*${label}[ \t]*\n?[ \t]*(` + MONEY + `)`, "im"));
+  const payoutStr = money(String.raw`Payout\b`);
+  const faceStr = money(String.raw`Total\s+face\s+value\b`);
+  const perTicketStr = money(String.raw`Price\s+per\s+ticket\b`);
 
-  const payout = parseEuro(payoutStr);
-  const faceValue = parseEuro(faceStr);
+  const payout = parseMoney(payoutStr);
+  const faceValue = parseMoney(faceStr);
 
   // No stable order # in this layout — build a dedupe key from event+date+seat.
   const dedupeSeed = `${eventName ?? ""}|${rawDate ?? ""}|${section ?? ""}|${row ?? ""}|${seats ?? ""}`;
@@ -98,7 +120,7 @@ export const parseSeatix: Parser = (email: RawEmail): ParsedSale | null => {
     seats,
     qty: qtyStr ? parseInt(qtyStr, 10) : 1,
     sellPrice: payout,
-    currency: "EUR",
+    currency: currencyOf(payoutStr, perTicketStr, faceStr),
     ...(faceValue != null ? { faceValue } : {}),
   };
 };

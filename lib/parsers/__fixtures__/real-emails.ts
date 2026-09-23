@@ -52,6 +52,76 @@ Payout	820.00€
 Total face value	560.00€
 Questions? Reply to iks sales@seatiks.com`;
 
+
+// The same Seatix layout settling in DOLLARS — real mail, 2026-09-23, sold
+// through Vividseats. The money regexes had the euro sign hard-coded, so payout
+// came back null, the parser returned null, and the poller filed this as an
+// unreadable stub named after its own subject. Seatix fronts several platforms;
+// the currency is whatever the platform pays in.
+export const SEATIX_SALE_USD_SUBJECT = "Sale confirmation #8826071B";
+export const SEATIX_SALE_USD = `Confirmation de vente
+
+A new sale has been confirmed. Review the fulfillment details.
+
+Andrea Bocelli Cardiff
+
+Sale Confirmation
+
+Your sale has been confirmed
+
+Event
+Andrea Bocelli Cardiff
+
+Date
+08/05/2027 19:00
+
+Venue
+Principality Stadium - Cardiff
+
+Quantity
+2
+
+Section
+Floor Q
+
+Row
+23
+
+Seats
+19-20
+
+Format
+External Transfer
+
+Platform
+Vividseats
+
+Financial Summary
+
+Price per ticket
+274.16$
+
+Total proceeds
+548.32$
+
+Commission (0% - Level 2)
+-0.00$
+
+Payout
+548.32$
+
+Total face value
+548.32$
+
+Profit
+0.00$
+
+ROI
+0.0%
+
+Transactional message - contact@seatiks.com
+SEATIKS LLC - 30 N Gould St Ste R, Sheridan, WY 82801, USA`;
+
 export const VIAGOGO_SALE = `etr, you sold 1 ticket!
 Congrats, you sold 1 ticket!
 
