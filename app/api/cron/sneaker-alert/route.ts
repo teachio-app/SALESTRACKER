@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { fetchNewEmails, type MailAccount } from "@/lib/mail";
 import { parseSneakerSale, type SneakerSale } from "@/lib/parsers/sneakers";
 import { notifySneakerSale, sneakerAlertPayload } from "@/lib/discord";
+import { sneakerSaleMail } from "@/lib/mailFilter";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -55,6 +56,7 @@ async function handle(req: Request) {
 
   const webhook = process.env.SNEAKER_WEBHOOK_URL;
   const roleId = process.env.SNEAKER_ROLE_ID;
+  const userId = process.env.SNEAKER_USER_ID;
   // Fail loudly rather than read mail into a webhook that isn't there: a missing
   // variable would otherwise advance the watermark past sales nobody was told
   // about, which looks exactly like "nothing sold".
@@ -74,11 +76,11 @@ async function handle(req: Request) {
     };
     const res = await fetch(webhook, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(sneakerAlertPayload(sample, roleId)),
+      body: JSON.stringify(sneakerAlertPayload(sample, roleId, userId)),
     });
     return NextResponse.json({
       test: true, webhook: `HTTP ${res.status}`,
-      role: roleId ? `<@&${roleId}>` : "no SNEAKER_ROLE_ID set — sent without a ping",
+      ping: roleId ? `<@&${roleId}>` : userId ? `<@${userId}>` : "no role or user set — sent without a ping",
     });
   }
 
@@ -91,7 +93,7 @@ async function handle(req: Request) {
   }
 
   const { emails, commit, info } = await fetchNewEmails({
-    stateKey: STATE_KEY, maxPerRun: MAX_PER_RUN, account: acct,
+    stateKey: STATE_KEY, maxPerRun: MAX_PER_RUN, account: acct, filter: sneakerSaleMail,
   });
 
   const stats = { read: emails.length, sales: 0, notified: 0, platforms: [] as string[], info };

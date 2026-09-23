@@ -61,3 +61,25 @@ export function shouldOpen(env: Envelope): boolean {
   if (domain && PLATFORM_DOMAIN.test(domain)) return true;
   return SALE_SUBJECT.test((env.subject ?? "").trim());
 }
+
+/**
+ * A stricter test for the sneaker mailbox.
+ *
+ * The shared allow-list opens anything from a platform, which is right for the
+ * ticket side where those senders write almost nothing else. StockX and
+ * Hypeboost are the opposite: of 2,840 of their messages in that Gmail, 26 were
+ * sales — 0.9%. The rest are price alerts ("🗣 New Lowest Ask!", "💰 New Highest
+ * Offer!"), and opening every one of them to find a sale would take days.
+ *
+ * "sold" is the whole discriminator, and it is left deliberately loose: a
+ * wording change like "Your item sold!" still passes. What it excludes on
+ * purpose is "📦 Time to Ship your …", which follows every StockX sale — the
+ * sale mail already alerted, and this module has no row to dedupe against, so
+ * reading the reminder too would ping twice for one sale.
+ */
+const SNEAKER_SALE_SUBJECT = /\bsold\b|item\s+(has\s+been|is)\s+sold/i;
+
+export function sneakerSaleMail(env: Envelope): boolean {
+  if (!shouldOpen(env)) return false;
+  return SNEAKER_SALE_SUBJECT.test((env.subject ?? "").trim());
+}

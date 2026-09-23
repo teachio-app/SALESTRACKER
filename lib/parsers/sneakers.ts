@@ -115,9 +115,20 @@ export function parseStockx(email: RawMail): SneakerSale | null {
     grab(b, /^[ \t]*([^\n]+)\n[ \t]*[A-Z0-9-]+\s+Size[ \t]*:/im) ??
     "(unnamed item)";
 
-  // "CT8012-047 Size: US M 8.5 New" — one line carrying three facts.
-  const spec = grab(b, /^[ \t]*([A-Z0-9][A-Z0-9-]{4,}\s+Size[ \t]*:[^\n]+)/im);
-  const size = grab(spec ?? b, /Size[ \t]*:[ \t]*(.+?)(?:\s+(?:New|Used|Worn)\b|$)/i);
+  // The spec arrives two ways. Rendered into one line it reads
+  //
+  //     CT8012-047 Size: US M 8.5 New
+  //
+  // but the plain-text part of the real mail is a bullet list:
+  //
+  //      * CT8012-047
+  //      * Size: US M 8.5
+  //      * Order number: 04-KS7SCGSDFT
+  //
+  // The pasted sample was the first shape and the mailbox turned out to be the
+  // second, so every size came back null against real mail until both were read.
+  const spec = grab(b, /^[ \t*]*([A-Z0-9][A-Z0-9-]{4,}\s+Size[ \t]*:[^\n]+)/im);
+  const size = grab(spec ?? b, /Size[ \t]*:[ \t]*(.+?)(?:\s+(?:New|Used|Worn)\b|\s*$)/im);
 
   return {
     platform: "stockx",
@@ -125,7 +136,11 @@ export function parseStockx(email: RawMail): SneakerSale | null {
     orderRef,
     product,
     size,
-    sku: spec ? grab(spec, /^([A-Z0-9][A-Z0-9-]{4,})\s+Size/i) : null,
+    // A style code on a line of its own ("CT8012-047"), or leading the one-line
+    // spec. Anchored so a price or an order number can't pass for one.
+    sku:
+      (spec ? grab(spec, /^([A-Z0-9][A-Z0-9-]{4,})\s+Size/i) : null) ??
+      grab(b, /^[ \t*]*([A-Z]{1,3}\d{3,}[A-Z0-9]*-\d{2,})[ \t]*$/im),
     condition: grab(b, /\b(New|Used|Worn)\b(?=\s*$|\s*\n)/im) ?? (/\bNew\b/.test(spec ?? "") ? "New" : null),
     salePrice,
     payout,

@@ -2,7 +2,7 @@ import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
 import { RawEmail } from "./parsers";
 import { supabaseAdmin } from "./supabase";
-import { shouldOpen, senderDomain } from "./mailFilter";
+import { shouldOpen, senderDomain, type Envelope } from "./mailFilter";
 
 // ─────────────────────────────────────────────────────────────
 // Reads new mail WITHOUT changing anything about the mailbox.
@@ -116,6 +116,12 @@ export type FetchOptions = {
    * vars any more. Omit it and the ticket side behaves exactly as before.
    */
   account?: MailAccount;
+  /**
+   * A stricter test than the shared allow-list, for a mailbox where it isn't
+   * selective enough. The sneaker senders write thousands of price alerts for
+   * every sale, so that module narrows it by subject.
+   */
+  filter?: (env: Envelope) => boolean;
 };
 
 export async function fetchNewEmails(opts: FetchOptions = {}): Promise<FetchResult> {
@@ -193,7 +199,7 @@ export async function fetchNewEmails(opts: FetchOptions = {}): Promise<FetchResu
         const uid = Number(msg.uid);
         if (uid < lo || uid > hi) continue;
         const env = { from: msg.envelope?.from?.[0]?.address, subject: msg.envelope?.subject };
-        if (shouldOpen(env)) {
+        if ((opts.filter ?? shouldOpen)(env)) {
           candidates.push(uid);
         } else {
           const d = senderDomain(env.from) || "(no sender)";

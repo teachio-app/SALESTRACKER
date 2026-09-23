@@ -7,6 +7,7 @@ import { parseHypeboost, parseStockx, parseSneakerSale, parseDashDate, parseLong
 import { parseAmount, currencyOf } from "./parsers/money";
 import {
   HYPEBOOST_SALE, HYPEBOOST_SALE_SUBJECT, STOCKX_SALE, STOCKX_SALE_SUBJECT, asMail,
+  STOCKX_SALE_PLAIN,
 } from "./parsers/__fixtures__/sneaker-emails";
 
 let failed = 0;
@@ -85,6 +86,16 @@ check("router picks hypeboost",
   parseSneakerSale(asMail(HYPEBOOST_SALE, HYPEBOOST_SALE_SUBJECT, "noreply@hypeboost.com"))?.platform, "hypeboost");
 check("router picks stockx",
   parseSneakerSale(asMail(STOCKX_SALE, STOCKX_SALE_SUBJECT, "noreply@stockx.com"))?.platform, "stockx");
+
+console.log("\nStockX as it really arrives — a bullet list, not one line");
+const sp = parseStockx(asMail(STOCKX_SALE_PLAIN, STOCKX_SALE_SUBJECT, "noreply@stockx.com"));
+check("recognised", sp !== null, true);
+check("size read from its own bullet", sp?.size, "US M 8.5");
+check("sku read from its own bullet", sp?.sku, "CT8012-047");
+check("order", sp?.orderRef, "04-KS7SCGSDFT");
+check("payout", sp?.payout, 188.69);
+check("sale price", sp?.salePrice, 221);
+check("ship by", sp?.shipBy, "2026-09-15");
 
 console.log(failed === 0 ? "\nAll checks passed.\n" : `\n${failed} check(s) FAILED.\n`);
 process.exit(failed === 0 ? 0 : 1);

@@ -52,6 +52,25 @@ View Order
 Congrats on your sale!
 Ship your item by September 15, 2026 to avoid penalties.`;
 
+// The SAME StockX sale as it actually arrives — the plain-text part is a bullet
+// list, not the one-line spec the pasted sample showed. Every size came back
+// null against real mail until this was added.
+export const STOCKX_SALE_PLAIN = `Time to Ship Your Item
+
+Jordan 11 Retro Gamma Blue (2025)
+
+ * CT8012-047
+ * Size: US M 8.5
+ * Order number: 04-KS7SCGSDFT
+
+Sale Price: €221.00
+Transaction Fee (8.0%): -€17.68
+Payment Proc. (3%): -€6.63
+Shipping: -€8.00
+Total Payout €188.69
+
+Ship by September 15, 2026 to avoid penalties.`;
+
 export function asMail(text: string, subject = "", from = "") {
   return { from, subject, text, html: "" };
 }

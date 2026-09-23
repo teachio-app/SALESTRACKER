@@ -256,9 +256,22 @@ export async function notifyPayment(payment: ViagogoPayment, markedPaid = 0): Pr
 // guess at the platform's cut.
 const PLATFORM_NAME: Record<string, string> = { hypeboost: "Hypeboost", stockx: "StockX" };
 
+/**
+ * Who to ping. A ROLE is `<@&id>`, a USER is `<@id>` — the same number written
+ * either way pings nobody, and renders as a dead grey mention that looks like
+ * it worked. Both are supported because the id you have to hand is usually your
+ * own user, not a role.
+ */
+function ping(roleId?: string, userId?: string): Record<string, unknown> {
+  if (roleId) return { content: `<@&${roleId}>`, allowed_mentions: { parse: [], roles: [roleId] } };
+  if (userId) return { content: `<@${userId}>`, allowed_mentions: { parse: [], users: [userId] } };
+  return {};
+}
+
 export function sneakerAlertPayload(
   sale: SneakerSale,
-  roleId?: string
+  roleId?: string,
+  userId?: string
 ): Record<string, unknown> {
   const spec = [sale.size && `Size ${sale.size}`, sale.condition, sale.sku]
     .filter(Boolean)
@@ -285,10 +298,7 @@ export function sneakerAlertPayload(
     timestamp: new Date().toISOString(),
   };
 
-  return {
-    ...(roleId ? { content: `<@&${roleId}>`, allowed_mentions: { parse: [], roles: [roleId] } } : {}),
-    embeds: [embed],
-  };
+  return { ...ping(roleId, userId), embeds: [embed] };
 }
 
 /** Post one sneaker sale to its own webhook. Returns whether it landed. */
@@ -299,7 +309,7 @@ export async function notifySneakerSale(sale: SneakerSale): Promise<boolean> {
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(sneakerAlertPayload(sale, process.env.SNEAKER_ROLE_ID)),
+      body: JSON.stringify(sneakerAlertPayload(sale, process.env.SNEAKER_ROLE_ID, process.env.SNEAKER_USER_ID)),
     });
     if (!res.ok) console.error("Sneaker alert webhook returned", res.status);
     return res.ok;

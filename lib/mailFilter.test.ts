@@ -3,7 +3,7 @@
 // a real envelope from this mailbox — the sale ones taken from the messages
 // that produced actual rows, the noise from whatever was flooding that week.
 
-import { shouldOpen, senderDomain } from "./mailFilter";
+import { shouldOpen, senderDomain, sneakerSaleMail } from "./mailFilter";
 
 let failed = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -68,6 +68,22 @@ check("'now on sale' from an unknown sender stays shut",
   shouldOpen({ from: "news@someticketsite.com", subject: "Your Bad Bunny tickets are now on sale" }), false);
 check("but the same subject FROM viagogo is opened (sender wins)",
   shouldOpen({ from: "automated@orders.viagogo.com", subject: "Your Bad Bunny tickets are now on sale" }), true);
+
+console.log("\nsneakerSaleMail() — the sneaker mailbox needs a narrower net");
+// 2,840 platform messages in that Gmail, 26 of them sales. The subject is the
+// whole discriminator.
+const sn = (subject: string, from = "noreply@stockx.com") => sneakerSaleMail({ from, subject });
+check("stockx sale", sn("✅ You Sold Your Jordan 3 Retro PRM Bin23"), true);
+check("hypeboost sale", sn("Congratulations! Your item has been sold: Nike Moon Shoe", "noreply@hypeboost.com"), true);
+check("a looser wording still passes", sn("Your item sold!"), true);
+// The bulk of that mailbox.
+check("new lowest ask", sn("🗣 New Lowest Ask! Nike SB Dunk Low Nardwuar"), false);
+check("new highest offer", sn("💰 New Highest Offer! Jordan 4 Retro Black Cat"), false);
+check("cheaper provider", sn("There is a cheaper provider! Nike Air Max"), false);
+// Follows every StockX sale; the sale mail already alerted, and there is no
+// row to dedupe against, so reading this too would ping twice.
+check("the ship-by reminder is NOT a second sale", sn("📦 Time to Ship your Nike Tiempo Legend"), false);
+check("a stranger saying sold is still not opened", sn("you sold me a lemon", "friend@example.com"), true);
 
 console.log(failed === 0 ? "\nAll checks passed.\n" : `\n${failed} check(s) FAILED.\n`);
 process.exit(failed === 0 ? 0 : 1);
