@@ -30,7 +30,7 @@ export type Envelope = { from?: string | null; subject?: string | null };
 
 /** Where money actually comes from. Sender domains, matched on the domain part. */
 const PLATFORM_DOMAIN =
-  /(^|\.)(viagogo\.[a-z.]+|seatiks\.com|seatix\.com|gigsberg\.[a-z.]+|stubhub\.[a-z.]+|ticombo\.[a-z.]+|tickpick\.com|vividseats\.com)$/i;
+  /(^|\.)(viagogo\.[a-z.]+|seatiks\.com|seatix\.com|gigsberg\.[a-z.]+|stubhub\.[a-z.]+|ticombo\.[a-z.]+|tickpick\.com|vividseats\.com|stockx\.com|hypeboost\.[a-z.]+)$/i;
 
 /**
  * Subjects that are sale-shaped whoever sent them, so a forwarded or relayed
@@ -41,7 +41,7 @@ const PLATFORM_DOMAIN =
 // 159627734", "Order - 651889083", "Order ID: 649481835" — so the separator is
 // optional. The 5-digit floor is what keeps it from matching prose.
 const SALE_SUBJECT =
-  /(sale\s*confirmation|you\s+sold|sold\s+your|your\s+sale|payout|total\s+proceeds|you\s+have\s+just\s+been\s+paid|order\s*(id)?\s*[#:–—-]?\s*\d{5,}|transfer\s+your\s+ticket|send\s+your\s+tickets)/i;
+  /(sale\s*confirmation|you\s+sold|sold\s+your|your\s+sale|payout|total\s+proceeds|you\s+have\s+just\s+been\s+paid|order\s*(id)?\s*[#:–—-]?\s*\d{5,}|transfer\s+your\s+ticket|send\s+your\s+tickets|item\s+(has\s+been|is)\s+sold)/i;
 
 export function senderDomain(from: string | null | undefined): string {
   const at = (from ?? "").toLowerCase().trim();

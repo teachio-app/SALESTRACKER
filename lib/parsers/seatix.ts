@@ -1,4 +1,5 @@
 import { Parser, ParsedSale, RawEmail } from "./types";
+import { MONEY, parseAmount, currencyOf } from "./money";
 
 // ─────────────────────────────────────────────────────────────
 // SEATIX / GIGSBERG SALE PARSER
@@ -49,24 +50,6 @@ function parseSeatixDate(raw: string | null): string | null {
 // called "Sale confirmation #8826071B" — no event, no price, and no alert.
 // Seatix fronts several platforms (this one came through Vividseats), so the
 // currency is whatever the platform pays in and has to be read, not assumed.
-const MONEY = String.raw`[\d.,]+\s*[€$£]`;
-const SYMBOL_TO_CODE: Record<string, string> = { "€": "EUR", $: "USD", "£": "GBP" };
-
-function parseMoney(raw: string | null): number | null {
-  if (!raw) return null;
-  const n = parseFloat(raw.replace(/[^\d.,]/g, "").replace(/,/g, ""));
-  return isNaN(n) ? null : n;
-}
-
-/** Which currency the amounts are in. Defaults to EUR only if nothing says. */
-function currencyOf(...raw: (string | null)[]): string {
-  for (const r of raw) {
-    const sym = r?.match(/[€$£]/)?.[0];
-    if (sym) return SYMBOL_TO_CODE[sym];
-  }
-  return "EUR";
-}
-
 export const parseSeatix: Parser = (email: RawEmail): ParsedSale | null => {
   const body = email.text || email.html || "";
   if (!isSeatix(body)) return null;
@@ -99,8 +82,8 @@ export const parseSeatix: Parser = (email: RawEmail): ParsedSale | null => {
   const faceStr = money(String.raw`Total\s+face\s+value\b`);
   const perTicketStr = money(String.raw`Price\s+per\s+ticket\b`);
 
-  const payout = parseMoney(payoutStr);
-  const faceValue = parseMoney(faceStr);
+  const payout = parseAmount(payoutStr);
+  const faceValue = parseAmount(faceStr);
 
   // No stable order # in this layout — build a dedupe key from event+date+seat.
   const dedupeSeed = `${eventName ?? ""}|${rawDate ?? ""}|${section ?? ""}|${row ?? ""}|${seats ?? ""}`;

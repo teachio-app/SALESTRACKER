@@ -3,7 +3,7 @@ import { fetchNewEmails } from "@/lib/mail";
 import { processEmail, type ParsedSale } from "@/lib/parsers";
 import { isViagogoPayment, parseViagogoPayment } from "@/lib/parsers/viagogoPayment";
 import { supabaseAdmin, saleTotals, type SaleFill, type Ticket } from "@/lib/supabase";
-import { notifyDiscord, notifyPayment } from "@/lib/discord";
+import { notifyDiscord, notifyPayment, notifyUnparsedSale } from "@/lib/discord";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -98,6 +98,9 @@ export async function GET(req: Request) {
         external_id: `review:${hashSubject(email)}`,
       });
       stats.review++;
+      // Say so out loud. A stub row with no price is exactly what a missed sale
+      // looks like, and nobody goes looking at Review unprompted.
+      await notifyUnparsedSale(email.subject, email.from);
       continue;
     }
 

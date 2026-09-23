@@ -103,25 +103,36 @@ export type FetchResult = {
   info: string;
 };
 
+export type MailAccount = { host: string; port?: number; user: string; pass: string };
+
 export type FetchOptions = {
   /** Which watermark row to use. Omit for the sale poller's original one. */
   stateKey?: string;
   /** Override the per-run body cap — a reader that only parses can afford more. */
   maxPerRun?: number;
+  /**
+   * A different mailbox. The sneaker sales arrive at a Gmail account, not the
+   * Zoho catch-all, so the connection can't be read from one fixed set of env
+   * vars any more. Omit it and the ticket side behaves exactly as before.
+   */
+  account?: MailAccount;
 };
 
 export async function fetchNewEmails(opts: FetchOptions = {}): Promise<FetchResult> {
   const stateKey = opts.stateKey || DEFAULT_STATE_KEY;
   const maxBodies = opts.maxPerRun ?? MAX_BODIES;
   const started = Date.now();
-  const client = new ImapFlow({
+  const account: MailAccount = opts.account ?? {
     host: process.env.IMAP_HOST || "imappro.zoho.eu",
     port: Number(process.env.IMAP_PORT || 993),
+    user: process.env.IMAP_USER!,
+    pass: process.env.IMAP_PASSWORD!, // Zoho app-specific password
+  };
+  const client = new ImapFlow({
+    host: account.host,
+    port: account.port ?? 993,
     secure: true,
-    auth: {
-      user: process.env.IMAP_USER!,
-      pass: process.env.IMAP_PASSWORD!, // Zoho app-specific password
-    },
+    auth: { user: account.user, pass: account.pass },
     logger: false,
   });
 

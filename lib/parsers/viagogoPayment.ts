@@ -1,4 +1,5 @@
 import { RawEmail } from "./types";
+import { MONEY, parseAmount, currencyOf } from "./money";
 
 // ─────────────────────────────────────────────────────────────
 // VIAGOGO PAYMENT ("You have just been paid") PARSER
@@ -34,12 +35,6 @@ export type ViagogoPayment = {
   items: PaymentItem[];
 };
 
-function parseEuro(raw: string | null): number | null {
-  if (!raw) return null;
-  const n = parseFloat(raw.replace(/[^\d.,]/g, "").replace(/,/g, ""));
-  return isNaN(n) ? null : n;
-}
-
 export function isViagogoPayment(email: RawEmail): boolean {
   const hay = `${email.subject}\n${email.text || email.html || ""}`;
   return (
@@ -50,7 +45,8 @@ export function isViagogoPayment(email: RawEmail): boolean {
 }
 
 // One order line: "<paymentRef> <orderId> <date …> €<amount>".
-const ORDER_ROW = /^\d{5,}\s+(\d{5,})\s+.+?€\s*([\d.,]+)\s*$/;
+// Any currency, not just euros — the euro sign used to be baked in here too.
+const ORDER_ROW = new RegExp(String.raw`^\d{5,}\s+(\d{5,})\s+.+?(` + MONEY + String.raw`)\s*$`);
 // Lines that are chrome, never an event name.
 const NOT_NAME =
   /payment reference|paid to|^hello\b|processed your payment|^depending|^if you|view payment|^payment id|^payment:|help centre|copyright|^\s*$/i;
@@ -65,7 +61,8 @@ export function parseViagogoPayment(email: RawEmail): ViagogoPayment | null {
   if (!reference) return null;
 
   // Total: the "Payment:" row (with colon) — not the "Payment" column header.
-  const total = parseEuro(body.match(/Payment:\s*€\s*([\d.,]+)/i)?.[1] ?? null);
+  const totalRaw = body.match(new RegExp(String.raw`Payment:\s*(` + MONEY + `)`, "i"))?.[1] ?? null;
+  const total = parseAmount(totalRaw);
   if (total == null) return null;
 
   // "…on Friday, 17 July 2026" → "2026-07-17". Built from parts, not via Date(),
@@ -88,7 +85,7 @@ export function parseViagogoPayment(email: RawEmail): ViagogoPayment | null {
   for (let i = 0; i < lines.length; i++) {
     const m = lines[i].match(ORDER_ROW);
     if (m) {
-      const amount = parseEuro(m[2]);
+      const amount = parseAmount(m[2]);
       if (amount != null) {
         const qty = /^\d+$/.test(lines[i + 1] ?? "") ? parseInt(lines[i + 1], 10) : null;
         items.push({ orderId: m[1], eventName: lastName, amount, qty });
@@ -98,5 +95,5 @@ export function parseViagogoPayment(email: RawEmail): ViagogoPayment | null {
     }
   }
 
-  return { reference, paidOn, total, currency: "EUR", items };
+  return { reference, paidOn, total, currency: currencyOf(totalRaw), items };
 }

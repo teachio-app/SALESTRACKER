@@ -1,6 +1,7 @@
 import { ParsedSale } from "./parsers";
 import type { ViagogoPayment } from "./parsers/viagogoPayment";
 import { venueWithCountry } from "./venueCountry";
+import type { SneakerSale } from "./parsers/sneakers";
 
 // A ping only fires if the message CONTENT holds `<@id>` (embeds never ping),
 // and Discord needs the numeric user ID — a username can't be mentioned. Set
@@ -241,4 +242,99 @@ export async function notifyPayment(payment: ViagogoPayment, markedPaid = 0): Pr
   };
 
   await post(url, { ...mention(), embeds: [embed] });
+}
+
+// ── Sneaker sale alert (standalone module) ────────────────────────────
+// Its own webhook and its own channel — see app/api/cron/sneaker-alert.
+// Deliberately NOT saleEmbed(): a shoe has no seat, no venue and no event date,
+// and reusing the ticket embed would leave half its fields empty and put a
+// shipping deadline where an event date belongs.
+//
+// The headline is the PAYOUT, because that is the number that lands. StockX
+// states the gross and every fee; Hypeboost states neither, so the fee line
+// appears only when the mail actually said it rather than being derived from a
+// guess at the platform's cut.
+const PLATFORM_NAME: Record<string, string> = { hypeboost: "Hypeboost", stockx: "StockX" };
+
+export function sneakerAlertPayload(
+  sale: SneakerSale,
+  roleId?: string
+): Record<string, unknown> {
+  const spec = [sale.size && `Size ${sale.size}`, sale.condition, sale.sku]
+    .filter(Boolean)
+    .join("  ·  ");
+
+  const embed: Record<string, unknown> = {
+    title: clamp(oneLine(`👟 Sold — ${sale.product}`), 256),
+    color: 0x0ca30c,
+    description: clamp(spec, 4096) || undefined,
+    fields: [
+      { name: "Payout", value: `**${sale.payout.toFixed(2)} ${sale.currency}**`, inline: true },
+      ...(sale.salePrice != null
+        ? [{ name: "Sale price", value: `${sale.salePrice.toFixed(2)} ${sale.currency}`, inline: true }]
+        : []),
+      ...(sale.fees != null
+        ? [{ name: "Fees", value: `−${sale.fees.toFixed(2)} ${sale.currency}`, inline: true }]
+        : []),
+      { name: "Platform", value: PLATFORM_NAME[sale.platform] ?? sale.platform, inline: true },
+      // The deadline is the actionable part of these mails: miss it and the
+      // platform penalises the sale.
+      ...(sale.shipBy ? [{ name: "Ship by", value: sale.shipBy, inline: true }] : []),
+    ],
+    footer: { text: `${PLATFORM_NAME[sale.platform] ?? sale.platform} · order ${sale.orderRef}` },
+    timestamp: new Date().toISOString(),
+  };
+
+  return {
+    ...(roleId ? { content: `<@&${roleId}>`, allowed_mentions: { parse: [], roles: [roleId] } } : {}),
+    embeds: [embed],
+  };
+}
+
+/** Post one sneaker sale to its own webhook. Returns whether it landed. */
+export async function notifySneakerSale(sale: SneakerSale): Promise<boolean> {
+  const url = process.env.SNEAKER_WEBHOOK_URL;
+  if (!url) return false;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(sneakerAlertPayload(sale, process.env.SNEAKER_ROLE_ID)),
+    });
+    if (!res.ok) console.error("Sneaker alert webhook returned", res.status);
+    return res.ok;
+  } catch (e) {
+    console.error("Sneaker alert failed:", e);
+    return false;
+  }
+}
+
+/**
+ * A mail that looked like a sale but no parser could read.
+ *
+ * This exists because the failure is otherwise INVISIBLE. When a Seatix sale
+ * settled in dollars, the poller did everything right — opened it, classified
+ * it as a sale — and then filed a stub row named after its own subject, with no
+ * event and no price. Nothing was alerted, and it was only noticed because the
+ * owner went looking for a sale that never arrived.
+ *
+ * Amber, not green: money moved and the tracker could not say how much.
+ */
+export async function notifyUnparsedSale(subject: string, from: string): Promise<void> {
+  const url = process.env.DISCORD_WEBHOOK_URL;
+  if (!url) return;
+  await post(url, {
+    ...mention(),
+    embeds: [{
+      title: clamp(oneLine(`⚠ Sale mail I couldn't read — ${subject || "(no subject)"}`), 256),
+      color: 0xd9a441,
+      description:
+        "It looked like a sale, but no parser could get the amount out of it, so it's " +
+        "sitting in **Review** with no price. Usually this means the platform changed " +
+        "its layout, or settled in a currency the parser didn't know.",
+      fields: [{ name: "From", value: clamp(from || "—", 1024), inline: false }],
+      footer: { text: "Send the mail on and the parser can be taught it" },
+      timestamp: new Date().toISOString(),
+    }],
+  });
 }

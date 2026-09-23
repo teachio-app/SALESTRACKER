@@ -1,4 +1,5 @@
 import { Parser, ParsedSale, RawEmail } from "./types";
+import { MONEY, parseAmount, currencyOf } from "./money";
 
 // ─────────────────────────────────────────────────────────────
 // VIAGOGO SALE PARSER
@@ -90,19 +91,19 @@ function locateEventBlock(body: string): Block {
   return { eventName: before, rawDate: lines[i], venue: after };
 }
 
-// The payout is the € amount inside the "Payout details" block, not merely the
-// last € in the mail — a footer or promo € would otherwise win.
-function findPayout(body: string): number | null {
+// The payout is the amount inside the "Payout details" block, not merely the
+// last amount in the mail — a footer or promo figure would otherwise win.
+//
+// Any currency, not just euros. Every regex here used to have € baked in, which
+// meant a sale settling in pounds or dollars matched nothing, returned null, and
+// was filed as an unreadable stub. Seatix lost a sale exactly that way.
+function findPayout(body: string): { amount: number | null; raw: string | null } {
   const idx = body.search(/Payout\s+details/i);
   const scope = idx === -1 ? body : body.slice(idx);
-  const euros = scope.match(/€\s?[\d.,]+/g) ?? body.match(/€\s?[\d.,]+/g);
-  return euros ? parseEuro(euros[euros.length - 1]) : null;
-}
-
-function parseEuro(raw: string | null): number | null {
-  if (!raw) return null;
-  const n = parseFloat(raw.replace(/[^\d.,]/g, "").replace(/,/g, ""));
-  return isNaN(n) ? null : n;
+  const re = new RegExp(MONEY, "g");
+  const hits = scope.match(re) ?? body.match(re);
+  const raw = hits ? hits[hits.length - 1] : null;
+  return { amount: parseAmount(raw), raw };
 }
 
 // ── New Viagogo format (seen 2026-07) ────────────────────────────────
@@ -125,7 +126,8 @@ function parseViagogoV2(email: RawEmail, body: string): ParsedSale | null {
   const row = first(body, /\bRow\s+([A-Za-z0-9]+)\s*\|/i);
   const seats = first(body, /Seat\(s\)\s*:?\s*([0-9]+(?:\s*-\s*[0-9]+)?(?:\s*,\s*[0-9]+)*)/i);
   // "Payment Total", not "Subtotal" (they're equal when the fee is 0, but not always).
-  const payout = parseEuro(first(body, /Payment\s+Total\s*€\s*([\d.,]+)/i));
+  const payoutRaw = first(body, new RegExp(String.raw`Payment\s+Total\s*(` + MONEY + `)`, "i"));
+  const payout = parseAmount(payoutRaw);
 
   if (!orderRef || !eventName || payout == null) return null;
 
@@ -141,7 +143,7 @@ function parseViagogoV2(email: RawEmail, body: string): ParsedSale | null {
     seats,
     qty: qtyStr ? parseInt(qtyStr, 10) : 1,
     sellPrice: payout,
-    currency: "EUR",
+    currency: currencyOf(payoutRaw),
   };
 }
 
@@ -170,7 +172,8 @@ function parseViagogoV3(email: RawEmail, rawBody: string): ParsedSale | null {
   const section = first(body, /Section\s+([A-Za-z0-9]+)\s*,\s*Row/i);
   const row = first(body, /\bRow\s+([A-Za-z0-9]+)/i);
   const qtyStr = first(body, /Number of Tickets\s*:\s*(\d+)/i) || first(body, /\((\d+)\s*Ticket/i);
-  const payout = parseEuro(first(body, /Total Proceeds\s*:\s*€\s*([\d.,]+)/i));
+  const payoutRaw = first(body, new RegExp(String.raw`Total\s+Proceeds\s*:?\s*(` + MONEY + `)`, "i"));
+  const payout = parseAmount(payoutRaw);
 
   if (!orderRef || !eventName || payout == null) return null;
 
@@ -186,7 +189,7 @@ function parseViagogoV3(email: RawEmail, rawBody: string): ParsedSale | null {
     seats: null, // this layout gives section + row only, no seat numbers
     qty: qtyStr ? parseInt(qtyStr, 10) : 1,
     sellPrice: payout,
-    currency: "EUR",
+    currency: currencyOf(payoutRaw),
   };
 }
 
@@ -213,7 +216,7 @@ export const parseViagogo: Parser = (email: RawEmail): ParsedSale | null => {
   const row = first(body, /Row\s*\n?\s*([A-Za-z0-9]+)/i);
   const seats = first(body, /Seats?\s*\n?\s*(\d+\s*-\s*\d+|\d+)/i);
   const qtyStr = first(body, /Qty\s*\n?\s*(\d+)|Ticket\s*qty\s*\n?\s*(\d+)/i);
-  const payout = findPayout(body);
+  const { amount: payout, raw: payoutRaw } = findPayout(body);
 
   // Essentials missing → skip the mail entirely. The caller flags it for review
   // rather than inserting a row we had to guess at.
@@ -231,6 +234,6 @@ export const parseViagogo: Parser = (email: RawEmail): ParsedSale | null => {
     seats,
     qty: qtyStr ? parseInt(qtyStr, 10) : 1,
     sellPrice: payout,
-    currency: "EUR",
+    currency: currencyOf(payoutRaw),
   };
 };

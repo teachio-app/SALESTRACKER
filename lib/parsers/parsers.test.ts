@@ -129,6 +129,20 @@ check("seatRow", v3?.seatRow, "11");
 check("qty", v3?.qty, 2);
 check("sellPrice (Total Proceeds)", v3?.sellPrice, 123.06);
 
+console.log("\ncurrency is read, never assumed");
+// Every money regex in every parser used to have € baked in. A Seatix sale in
+// dollars matched nothing and was filed as an unreadable stub; viagogo would
+// have done the same the first time something sold in pounds.
+const inGBP = VIAGOGO_SALE.replace(/€3,691\.80/, "£3,691.80");
+const gbp = parseViagogo(asEmail(inGBP));
+check("a pound sale still parses", gbp?.sellPrice, 3691.8);
+check("and says GBP", gbp?.currency, "GBP");
+const inUSD = VIAGOGO_SALE_V3.replace(/€123\.06/, "$123.06");
+const usd = parseViagogo(asEmail(inUSD, VIAGOGO_SALE_V3_SUBJECT));
+check("a dollar sale still parses", usd?.sellPrice, 123.06);
+check("and says USD", usd?.currency, "USD");
+check("the euro original is unchanged", parseViagogo(asEmail(VIAGOGO_SALE))?.currency, "EUR");
+
 console.log("\nparseViagogoPayment()");
 const payEmail = asEmail(VIAGOGO_PAYMENT, VIAGOGO_PAYMENT_SUBJECT);
 check("recognised as payment", isViagogoPayment(payEmail), true);

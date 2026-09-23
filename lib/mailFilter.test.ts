@@ -42,6 +42,17 @@ check("payment notice",
   shouldOpen({ from: "someone@unknown.tld", subject: "viagogo payment 66726239 - You have just been paid" }), true);
 check("order number", shouldOpen({ from: "x@y.tld", subject: "viagogo customer support update Order - 651889083" }), true);
 
+console.log("\nthe sneaker side");
+check("stockx sale", shouldOpen({ from: "noreply@stockx.com", subject: "You Sold Your Jordan 11 Retro" }), true);
+check("hypeboost sale", shouldOpen({ from: "noreply@hypeboost.com", subject: "Congratulations! Your item has been sold: Nike Moon Shoe" }), true);
+// Both send plenty of other mail; opening it costs a fetch, missing a sale
+// costs the sale, so the sender alone is enough to open.
+check("...and their other mail is opened too, then dropped by the parser",
+  shouldOpen({ from: "noreply@stockx.com", subject: "Weekly market update" }), true);
+// The subject alone carries it if a mail is ever forwarded from elsewhere.
+check("forwarded sale, unknown sender",
+  shouldOpen({ from: "me@gmail.com", subject: "Fwd: Your item has been sold: Nike Moon Shoe" }), true);
+
 console.log("\nthe flood — not opened");
 check("Confirm your RSVP (2,397 of a 3,000 sample)",
   shouldOpen({ from: "noreply@owsla.com", subject: "Confirm your RSVP" }), false);
