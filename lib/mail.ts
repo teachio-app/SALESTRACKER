@@ -53,6 +53,9 @@ const ENVELOPE_WINDOW = 100_000;
 // sweep — comfortably inside the 60s function budget, and with the allow-list
 // keeping candidates to a few hundred a day, enough to stay at the front.
 const MAX_BODIES = 40;
+// Bodies are fetched in groups: one FETCH per group rather than per message,
+// which is both quicker and less likely to have a single command refused.
+const BODY_BATCH = 10;
 
 // ── The deadline that actually matters is the CALLER'S ────────────────
 // Vercel allows 60s, but the thing invoking this is an external pinger, and
@@ -213,6 +216,10 @@ export async function fetchNewEmails(opts: FetchOptions = {}): Promise<FetchResu
   let info = "";
   let skipped = 0;
   let topSkipped = "";
+  // Candidates the server offered but whose body never arrived. They are NOT
+  // stepped over — the watermark stops before them — and they are reported,
+  // because a silent skip here is a lost sale.
+  let unread = 0;
 
   await client.connect();
 
@@ -303,26 +310,28 @@ export async function fetchNewEmails(opts: FetchOptions = {}): Promise<FetchResu
       .map(([d, n]) => `${d}×${n}`).join(", ");
 
     // ── Phase 2: bodies, for candidates only ──
-    // More candidates than the cap? Take the oldest, and hold the watermark at
-    // the last one opened so the remainder is picked up next run instead of
-    // being skipped.
-    let examinedTo = scannedTo;
-    let wanted = candidates;
-    if (candidates.length > maxBodies) {
-      wanted = candidates.slice(0, maxBodies);
-      examinedTo = wanted[wanted.length - 1];
-    }
-    let lastOpened = mark.last_uid;
+    //
+    // The watermark may pass a candidate ONLY if its body was actually read.
+    //
+    // It used to advance over the whole searched range whenever the candidate
+    // list fitted under the cap, regardless of how many bodies came back. A
+    // FETCH that returns nothing — the server declining, a message moved
+    // mid-run — therefore skipped that sale permanently and silently. Caught by
+    // putting a real sale mail in the mailbox and watching it vanish: the run
+    // logged "17 candidate(s), 13 opened", and four sales were gone. The same
+    // mail, alone in the window, processed perfectly. That is why this looked
+    // like a parser fault for weeks and never was one.
+    const wanted = candidates.length > maxBodies ? candidates.slice(0, maxBodies) : candidates;
+    const opened = new Set<number>();
 
-    for (const uid of wanted) {
-      // Out of time: stop here and let the watermark sit at the last message
-      // actually opened. The rest is picked up next run, not skipped.
-      if (Date.now() - started > RUN_MS) {
-        examinedTo = emails.length ? lastOpened : mark.last_uid;
-        break;
-      }
-      for await (const msg of client.fetch(String(uid), { source: true, uid: true }, { uid: true })) {
-        if (Number(msg.uid) !== uid || !msg.source) continue;
+    // Batched: one FETCH per group rather than per message. Fewer commands is
+    // faster and gives the server less opportunity to refuse one.
+    for (let i = 0; i < wanted.length; i += BODY_BATCH) {
+      if (Date.now() - started > RUN_MS) break;
+      const group = wanted.slice(i, i + BODY_BATCH);
+      for await (const msg of client.fetch(group.join(","), { source: true, uid: true }, { uid: true })) {
+        const uid = Number(msg.uid);
+        if (!group.includes(uid) || !msg.source) continue;
         const parsed = await simpleParser(msg.source as Buffer);
         emails.push({
           from: parsed.from?.text || "",
@@ -331,9 +340,26 @@ export async function fetchNewEmails(opts: FetchOptions = {}): Promise<FetchResu
           html: typeof parsed.html === "string" ? parsed.html : "",
           date: parsed.date || new Date(),
         });
-        lastOpened = uid;
+        opened.add(uid);
       }
     }
+
+    // Advance across the run of candidates that were read, and stop dead at the
+    // first one that wasn't — that message stays unread and is retried, rather
+    // than being stepped over. Only when every candidate the server offered was
+    // read does the mark jump to the top of the searched range.
+    const missed = wanted.filter((u) => !opened.has(u));
+    let examinedTo: number;
+    if (missed.length === 0 && wanted.length === candidates.length) {
+      examinedTo = scannedTo;
+    } else {
+      examinedTo = mark.last_uid;
+      for (const uid of wanted) {
+        if (!opened.has(uid)) break;
+        examinedTo = uid;
+      }
+    }
+    unread = missed.length;
     const to = examinedTo;
     // Hits the server returned that our own rules turned down.
     skipped = Math.max(0, hits.length - candidates.length);
@@ -356,7 +382,9 @@ export async function fetchNewEmails(opts: FetchOptions = {}): Promise<FetchResu
     info =
       `uid ${from}..${to}, searched ${windowTop - from + 1}, ` +
       `${candidates.length} candidate(s), ${emails.length} opened` +
-      (skipped > 0 ? `, ${skipped} rejected` : "") + (topSkipped ? ` [${topSkipped}]` : "") +
+      (skipped > 0 ? `, ${skipped} rejected` : "") +
+      (unread > 0 ? `, ${unread} unread — HELD for retry` : "") +
+      (topSkipped ? ` [${topSkipped}]` : "") +
       (behind > 0 ? `, ${behind} still behind` : "");
   } finally {
     lock.release();
