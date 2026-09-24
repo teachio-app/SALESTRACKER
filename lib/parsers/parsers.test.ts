@@ -8,9 +8,12 @@ import { processEmail } from "./index";
 import { parseViagogoPayment, isViagogoPayment } from "./viagogoPayment";
 import { parseLa28Order, isLa28Order, parseLa28Date } from "./la28";
 import { htmlToText, pickExtractSource } from "../htmlText";
+import { shouldOpen } from "../mailFilter";
+import { seatixAlertPayload } from "../discord";
 import {
   SEATIX_SALE, SEATIX_SALE_TRAP, VIAGOGO_SALE, VIAGOGO_CONCERT,
   SEATIX_SALE_USD, SEATIX_SALE_USD_SUBJECT,
+  SEATIX_DENMARK, SEATIX_DENMARK_SUBJECT,
   VIAGOGO_SALE_V2, VIAGOGO_SALE_V2_SUBJECT,
   VIAGOGO_SALE_V3, VIAGOGO_SALE_V3_SUBJECT,
   VIAGOGO_PAYMENT, VIAGOGO_PAYMENT_SUBJECT, asEmail,
@@ -128,6 +131,40 @@ check("section", v3?.section, "326");
 check("seatRow", v3?.seatRow, "11");
 check("qty", v3?.qty, 2);
 check("sellPrice (Total Proceeds)", v3?.sellPrice, 123.06);
+
+console.log("\nthe sale that went missing on 24 September — the WHOLE chain");
+// It reached the tracker only after a manual rewind. The parser was never at
+// fault, so testing the parser alone would have proved nothing: every step
+// between the mail arriving and a row existing is asserted here.
+const dkMail = asEmail(SEATIX_DENMARK, SEATIX_DENMARK_SUBJECT);
+const dkEnvelope = { from: "sales@seatiks.com", subject: SEATIX_DENMARK_SUBJECT };
+check("1. the envelope filter opens it", shouldOpen(dkEnvelope), true);
+check("2. classify calls it a sale", classify(dkMail), "sale");
+check("3. processEmail inserts it", processEmail(dkMail).action, "insert");
+const dk = parseSeatix(dkMail);
+check("4. and it parses", dk !== null, true);
+check("   eventName", dk?.eventName, "Nations League - Denmark vs Portugal");
+check("   eventDate", dk?.eventDate, "2026-10-01");
+check("   venue", dk?.location, "Parken Stadium");
+check("   section", dk?.section, "Tribune A A2");
+check("   seatRow", dk?.seatRow, "6");
+check("   seats", dk?.seats, "2-3");
+check("   qty", dk?.qty, 2);
+check("   payout", dk?.sellPrice, 500);
+check("   currency", dk?.currency, "EUR");
+check("   faceValue", dk?.faceValue, 120);
+// Seatix fronts several marketplaces — this one sold through Ticombo — so
+// nothing may key on which platform the body names.
+check("   the Ticombo platform line changes nothing", dk?.source, "seatix");
+// 5. and the alert renders, with the role ping intact.
+const dkAlert = seatixAlertPayload(dk!, "1533762485767766058") as {
+  content: string; embeds: { title: string; fields: { name: string; value: string }[] }[];
+};
+check("5. the alert pings the role", dkAlert.content, "<@&1533762485767766058>");
+check("   titled with the event", dkAlert.embeds[0].title,
+  "💰 Sold — Nations League - Denmark vs Portugal");
+check("   payout on the alert",
+  dkAlert.embeds[0].fields.find((f) => f.name === "Payout")?.value, "500.00 EUR");
 
 console.log("\ncurrency is read, never assumed");
 // Every money regex in every parser used to have € baked in. A Seatix sale in

@@ -456,3 +456,46 @@ Digital delivery fee
 $0.00
 Total
 $2,013.00`;
+
+// ── The sale that went missing on 24 September ────────────────────────
+// Real mail, pasted by the owner after it failed to reach the tracker. The
+// parser was never the problem — this parses cleanly — the poller had stopped
+// keeping up with a 162,000-message mailbox and never opened it. Kept as a
+// fixture so the whole chain is asserted, not just the parsing: the envelope
+// filter must open it, classify must call it a sale, processEmail must insert,
+// and the alert must render.
+//
+// Note the platform line says Ticombo: Seatix fronts several marketplaces, so
+// nothing here may key on which one.
+export const SEATIX_DENMARK_SUBJECT = "Sale confirmation #F1F0AB7A";
+export const SEATIX_DENMARK = `Seatiks
+Nations League - Denmark vs Portugal
+
+Sale Confirmation
+Your sale has been confirmed
+
+Event	Nations League - Denmark vs Portugal
+Date	01/10/2026 20:45
+Venue	Parken Stadium
+Quantity	2
+Section	Tribune A A2
+Row	6
+Seats	2-3
+Format	External Transfer
+Platform	Ticombo
+Financial Summary
+Price per ticket	250.00€
+Total proceeds	500.00€
+Commission (0% - Level 2)	-0.00€
+Payout	500.00€
+Total face value	120.00€
+Profit	380.00€
+ROI	316.7%
+Seatiks
+The operating system for professional ticket brokers.
+
+Transactional message · contact@seatiks.com
+
+SEATIKS LLC · 30 N Gould St Ste R, Sheridan, WY 82801, USA
+
+Manage notifications`;
