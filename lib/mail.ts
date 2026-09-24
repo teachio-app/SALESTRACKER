@@ -114,12 +114,51 @@ async function readWatermark(key: string): Promise<Watermark | null> {
   return data ?? null;
 }
 
-async function writeWatermark(key: string, uidValidity: number, lastUid: number): Promise<void> {
+/**
+ * Move the watermark forward — never backward.
+ *
+ * Two runs can overlap: a cron firing while another is still going, or a manual
+ * run alongside the scheduler. Each reads the mark at the start and writes its
+ * own result at the end, so the slower one used to overwrite the faster one's
+ * progress with a LOWER number. Observed live: a run finished at 164246 and a
+ * cron that had started earlier put it back to 141599, sending the poller over
+ * 20,000 messages it had already read.
+ *
+ * Nothing was lost — external_id dedupes the repeats — but the work was, so the
+ * write is now conditional on the stored value still being lower. A reset to an
+ * EARLIER position (adopting a mailbox, or a deliberate rewind) goes through
+ * `force`, which is the only way the number is allowed to fall.
+ */
+async function writeWatermark(
+  key: string,
+  uidValidity: number,
+  lastUid: number,
+  force = false
+): Promise<void> {
   const db = supabaseAdmin();
-  await db.from("poll_state").upsert(
-    { mailbox: key, uid_validity: uidValidity, last_uid: lastUid, updated_at: new Date().toISOString() },
-    { onConflict: "mailbox" }
-  );
+  const row = {
+    mailbox: key,
+    uid_validity: uidValidity,
+    last_uid: lastUid,
+    updated_at: new Date().toISOString(),
+  };
+  if (force) {
+    await db.from("poll_state").upsert(row, { onConflict: "mailbox" });
+    return;
+  }
+  // Conditional update first; only insert if this reader has no row yet.
+  const { data } = await db
+    .from("poll_state")
+    .update(row)
+    .eq("mailbox", key)
+    .lt("last_uid", lastUid)
+    .select("mailbox");
+  if (!data?.length) {
+    const { data: existing } = await db
+      .from("poll_state").select("last_uid").eq("mailbox", key).maybeSingle();
+    if (!existing) await db.from("poll_state").insert(row);
+    // Otherwise the stored mark is already at or past this one: leave it.
+  }
 }
 
 export type FetchResult = {
@@ -194,7 +233,7 @@ export async function fetchNewEmails(opts: FetchOptions = {}): Promise<FetchResu
       info = mark
         ? `uidvalidity changed (${mark.uid_validity} → ${uidValidity}); watermark reset to ${start}`
         : `first run; watermark set to ${start}, nothing backfilled`;
-      await writeWatermark(stateKey, uidValidity, start);
+      await writeWatermark(stateKey, uidValidity, start, true);
       return { emails: [], commit: async () => {}, info };
     }
 
