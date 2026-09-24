@@ -56,6 +56,10 @@ const MAX_BODIES = 40;
 // Bodies are fetched in groups: one FETCH per group rather than per message,
 // which is both quicker and less likely to have a single command refused.
 const BODY_BATCH = 10;
+// The newest stretch of the mailbox, read by listing rather than by asking the
+// server to match. Small enough to stay cheap, wide enough to cover any
+// plausible indexing lag on mail that arrived while a run was in flight.
+const FRESH_TAIL = 400;
 
 // ── The deadline that actually matters is the CALLER'S ────────────────
 // Vercel allows 60s, but the thing invoking this is an external pinger, and
@@ -270,21 +274,40 @@ export async function fetchNewEmails(opts: FetchOptions = {}): Promise<FetchResu
     // "worth opening" and a server with looser matching can't widen them.
     const candidates: number[] = [];
     const skippedBy = new Map<string, number>();
+    // UIDs whose envelope actually came back. A uid in the tail range that no
+    // longer exists simply isn't here, which is fine — it's a gap, not a miss.
+    const seen = new Set<number>();
     let scannedTo = mark.last_uid;
 
-    const range = `${from}:${windowTop}`;
+    // SEARCH is not trustworthy for mail that has JUST arrived: the server
+    // indexes on its own schedule. Proved by putting three sale mails in the
+    // mailbox and polling immediately — SEARCH returned nothing, the watermark
+    // stepped over all three, and a minute later the identical query found them.
+    // That is a lost sale, and it is the same shape of bug as skipping an
+    // unopened body: trusting a source that can be silently incomplete.
+    //
+    // So the range is split. The bulk goes to SEARCH, which is what makes a
+    // 160,000-message mailbox tractable, while the TAIL — the newest messages,
+    // the ones that matter most — is read envelope by envelope, where nothing
+    // can be missing because the messages are listed rather than matched.
+    const tailFrom = Math.max(from, windowTop - FRESH_TAIL + 1);
     let hits: number[] = [];
-    try {
-      hits = ((await client.search(
-        { uid: range, or: SEARCH_TERMS } as Parameters<typeof client.search>[0],
-        { uid: true }
-      )) ?? []) as number[];
-    } catch (e) {
-      // A server that dislikes the query must not stall the poller forever;
-      // fall back to opening nothing this run and say so.
-      console.error("IMAP search failed:", e);
-      hits = [];
+    if (tailFrom > from) {
+      try {
+        hits = ((await client.search(
+          { uid: `${from}:${tailFrom - 1}`, or: SEARCH_TERMS } as Parameters<typeof client.search>[0],
+          { uid: true }
+        )) ?? []) as number[];
+      } catch (e) {
+        // A server that dislikes the query must not stall the poller forever.
+        // Nothing is skipped: the watermark can't pass what wasn't examined.
+        console.error("IMAP search failed:", e);
+        hits = [];
+      }
     }
+    // Everything in the tail is a hit as far as this stage is concerned; the
+    // filter below decides, exactly as it does for the searched part.
+    for (let u = tailFrom; u <= windowTop; u++) hits.push(u);
 
     // Confirm each hit against our own rules — and record what it rejects, so
     // an unfamiliar sender shows up in the cron response rather than nowhere.
@@ -295,6 +318,7 @@ export async function fetchNewEmails(opts: FetchOptions = {}): Promise<FetchResu
         const uid = Number(msg.uid);
         if (uid < from || uid > windowTop) continue;
         const env = { from: msg.envelope?.from?.[0]?.address, subject: msg.envelope?.subject };
+        seen.add(uid);
         if ((opts.filter ?? shouldOpen)(env)) candidates.push(uid);
         else {
           const d = senderDomain(env.from) || "(no sender)";
