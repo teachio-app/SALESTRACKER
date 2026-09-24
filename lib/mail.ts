@@ -43,8 +43,10 @@ const DEFAULT_STATE_KEY = MAILBOX;
 // all of it relayed bot noise, so the poller fell further behind every hour and
 // simply never reached a sale. Scanning envelopes first and paying for bodies
 // only where a sale could plausibly be turns that around completely.
-const ENVELOPE_WINDOW = 4000; // UIDs whose envelopes one run may scan
-const ENVELOPE_BATCH = 1000;  // per FETCH command
+// How far ahead one run may look. Generous now that the SERVER does the
+// filtering: the cost is the number of hits, not the size of the range, so a
+// backlog of thousands drains in a run or two instead of never.
+const ENVELOPE_WINDOW = 100_000;
 // Measured on this account rather than guessed: a run opening 15 bodies and
 // scanning ~2,800 envelopes finished in 12s, so a body costs ~0.4s, not the ~2s
 // the original estimate assumed. 40 bodies ≈ 16s on top of an ~8s envelope
@@ -64,6 +66,30 @@ const MAX_BODIES = 40;
 // actually examined, which is what makes stopping early safe.
 const RUN_MS = 18_000;
 const ENVELOPE_MS = 9_000;
+
+// What the server is asked for, as one OR'd SEARCH. Deliberately broader than
+// mailFilter's rules — SEARCH is a coarse sieve and the real decision still
+// happens here — but narrow enough that a 160,000-message mailbox returns a
+// handful of UIDs instead of a hundred thousand envelopes.
+const SEARCH_TERMS = [
+  { from: "viagogo" },
+  { from: "seatiks" },
+  { from: "seatix" },
+  { from: "gigsberg" },
+  { from: "stubhub" },
+  { from: "ticombo" },
+  { from: "vividseats" },
+  { from: "stockx" },
+  { from: "hypeboost" },
+  // Forwarded or relayed sales, which carry no platform sender.
+  { subject: "sale confirmation" },
+  { subject: "you sold" },
+  { subject: "sold your" },
+  { subject: "has been sold" },
+  { subject: "total proceeds" },
+  { subject: "send your tickets" },
+  { subject: "you have just been paid" },
+];
 
 type Watermark = { uid_validity: number; last_uid: number };
 
@@ -180,34 +206,58 @@ export async function fetchNewEmails(opts: FetchOptions = {}): Promise<FetchResu
     const windowTop = Math.min(uidNext - 1, mark.last_uid + ENVELOPE_WINDOW);
     highestSeen = mark.last_uid;
 
-    // ── Phase 1: envelopes ── cheap, batched, and the only thing that decides
-    // what's worth opening. `scannedTo` tracks how far we actually got, so a
-    // run cut short by the clock resumes rather than skipping.
+    // ── Phase 1: ask the SERVER which messages could matter ──────────
+    //
+    // This used to pull envelopes a thousand at a time and filter them here.
+    // That worked at 30k messages and collapsed at 160k: a single batch of
+    // 1,000 envelopes came to cost most of a 9-second budget, so a run examined
+    // ~1,000 UIDs, took 43 seconds end to end, and often died at Vercel's 60s
+    // ceiling before committing anything. The mailbox was growing by thousands
+    // a day and the poller was 7,198 behind and losing.
+    //
+    // IMAP can do the filtering itself. One SEARCH over the whole range returns
+    // just the UIDs worth opening, and the work no longer scales with how much
+    // junk arrived — only with how much of it is actually from a platform.
+    //
+    // The envelopes of the hits are still checked against the same filter
+    // afterwards, so the rules in mailFilter.ts stay the single definition of
+    // "worth opening" and a server with looser matching can't widen them.
     const candidates: number[] = [];
-    // Who is being passed over, and how often. Skipping is invisible by nature,
-    // so the counts go back in the response: a ticket platform appearing here
-    // means the filter is wrong, and that should be readable rather than
-    // waiting to be noticed by an alert that never came.
     const skippedBy = new Map<string, number>();
     let scannedTo = mark.last_uid;
-    for (let lo = from; lo <= windowTop; lo += ENVELOPE_BATCH) {
-      if (Date.now() - started > ENVELOPE_MS) break;
-      const hi = Math.min(lo + ENVELOPE_BATCH - 1, windowTop);
-      for await (const msg of client.fetch(`${lo}:${hi}`, { uid: true, envelope: true }, { uid: true })) {
-        // `X:Y` ranges can return messages outside the range on some servers.
-        // Trust the UID, not the range.
+
+    const range = `${from}:${windowTop}`;
+    let hits: number[] = [];
+    try {
+      hits = ((await client.search(
+        { uid: range, or: SEARCH_TERMS } as Parameters<typeof client.search>[0],
+        { uid: true }
+      )) ?? []) as number[];
+    } catch (e) {
+      // A server that dislikes the query must not stall the poller forever;
+      // fall back to opening nothing this run and say so.
+      console.error("IMAP search failed:", e);
+      hits = [];
+    }
+
+    // Confirm each hit against our own rules — and record what it rejects, so
+    // an unfamiliar sender shows up in the cron response rather than nowhere.
+    if (hits.length) {
+      for await (const msg of client.fetch(
+        hits.join(","), { uid: true, envelope: true }, { uid: true }
+      )) {
         const uid = Number(msg.uid);
-        if (uid < lo || uid > hi) continue;
+        if (uid < from || uid > windowTop) continue;
         const env = { from: msg.envelope?.from?.[0]?.address, subject: msg.envelope?.subject };
-        if ((opts.filter ?? shouldOpen)(env)) {
-          candidates.push(uid);
-        } else {
+        if ((opts.filter ?? shouldOpen)(env)) candidates.push(uid);
+        else {
           const d = senderDomain(env.from) || "(no sender)";
           skippedBy.set(d, (skippedBy.get(d) ?? 0) + 1);
         }
       }
-      scannedTo = hi;
     }
+    // The whole range was examined by the server, not just the part we opened.
+    scannedTo = windowTop;
     candidates.sort((a, b) => a - b);
     topSkipped = [...skippedBy.entries()]
       .sort((a, b) => b[1] - a[1]).slice(0, 4)
@@ -246,7 +296,8 @@ export async function fetchNewEmails(opts: FetchOptions = {}): Promise<FetchResu
       }
     }
     const to = examinedTo;
-    skipped = Math.max(0, scannedTo - mark.last_uid) - candidates.length;
+    // Hits the server returned that our own rules turned down.
+    skipped = Math.max(0, hits.length - candidates.length);
 
     // The whole range from..to has now been examined, so that is where the
     // watermark belongs — NOT merely at the highest UID that came back.
@@ -264,8 +315,9 @@ export async function fetchNewEmails(opts: FetchOptions = {}): Promise<FetchResu
 
     const behind = uidNext - 1 - to;
     info =
-      `uid ${from}..${to}, ${emails.length} opened of ${candidates.length} candidate(s), ` +
-      `${skipped} not opened` + (topSkipped ? ` [${topSkipped}]` : "") +
+      `uid ${from}..${to}, searched ${windowTop - from + 1}, ` +
+      `${candidates.length} candidate(s), ${emails.length} opened` +
+      (skipped > 0 ? `, ${skipped} rejected` : "") + (topSkipped ? ` [${topSkipped}]` : "") +
       (behind > 0 ? `, ${behind} still behind` : "");
   } finally {
     lock.release();
