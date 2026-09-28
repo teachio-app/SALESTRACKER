@@ -31,8 +31,14 @@ import { supabaseAdmin } from "./supabase";
 
 /** Postgres unique-violation. */
 const UNIQUE_VIOLATION = "23505";
-/** Postgres undefined_table — the migration hasn't been run yet. */
-const UNDEFINED_TABLE = "42P01";
+/**
+ * "That table doesn't exist" — the migration hasn't been run yet. TWO codes,
+ * because the request never reaches Postgres: PostgREST answers from its own
+ * schema cache with PGRST205 and a 404. Checking only for the Postgres code
+ * 42P01 meant the "run supabase/schema.sql" hint — the entire point of telling
+ * these two failures apart — never appeared for the case it was written for.
+ */
+const MISSING_TABLE = ["42P01", "PGRST205"];
 
 export type ClaimResult =
   /** First time seen — go ahead and post. */
@@ -83,5 +89,6 @@ export async function releaseAlert(channel: string, key: string): Promise<void> 
 
 /** True when the failure means "run supabase/schema.sql", not "try again". */
 export function isMissingTable(r: ClaimResult): boolean {
-  return !r.ok && r.reason === "unavailable" && r.detail.startsWith(UNDEFINED_TABLE);
+  if (r.ok || r.reason !== "unavailable") return false;
+  return MISSING_TABLE.some((code) => r.detail.startsWith(`${code}:`));
 }

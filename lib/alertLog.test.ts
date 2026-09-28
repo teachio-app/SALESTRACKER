@@ -71,6 +71,15 @@ console.log("\nonly a unique violation means 'already announced'");
   check("42P01 → unavailable, not duplicate", missing.ok === false && (missing as never as { reason: string }).reason, "unavailable");
   check("42P01 is recognised as the migration being unrun", isMissingTable(missing), true);
 
+  // The code that actually arrives when the migration is unrun. The request
+  // never reaches Postgres: PostgREST answers from its schema cache with a 404,
+  // so checking only for 42P01 hid the hint in the exact case it was for.
+  const cacheMiss = classifyClaim({
+    code: "PGRST205", message: "Could not find the table 'public.alert_log' in the schema cache",
+  });
+  check("PGRST205 → unavailable", cacheMiss.ok === false && (cacheMiss as never as { reason: string }).reason, "unavailable");
+  check("PGRST205 is recognised as the migration being unrun", isMissingTable(cacheMiss), true);
+
   // Anything unexpected also has to fall on the "post it anyway" side.
   const odd = classifyClaim({ code: null, message: "fetch failed" });
   check("no code → unavailable", odd.ok === false && (odd as never as { reason: string }).reason, "unavailable");
