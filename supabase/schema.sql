@@ -299,3 +299,31 @@ drop trigger if exists todos_stamp_done on todos;
 create trigger todos_stamp_done
   before insert or update on todos
   for each row execute function stamp_done_at();
+
+-- ── Alert log ────────────────────────────────────────────────────────
+-- What the standalone alerters (Seatix, sneakers) have already announced.
+--
+-- Those modules write nothing to `tickets` by design, which left them with no
+-- memory — and Seatix delivers every confirmation to the mailbox TWICE (same
+-- second, same confirmation number, consecutive UIDs), so every sale pinged
+-- Discord twice. The tracker never showed a double because tickets.external_id
+-- is unique; the alerters had no equivalent. This is it.
+--
+-- The primary key is doing real work: two cron runs can overlap and both hold
+-- the same message, and only a uniqueness constraint can decide which one gets
+-- to post. See lib/alertLog.ts for the claim/release protocol.
+--
+-- `channel` namespaces the key, so a third alerter needs no new table. Rows are
+-- tiny and write-once; prune with
+--     delete from alert_log where at < now() - interval '180 days';
+-- if it ever matters.
+create table if not exists alert_log (
+  channel text not null,
+  key     text not null,
+  at      timestamptz not null default now(),
+  primary key (channel, key)
+);
+
+alter table alert_log enable row level security;
+
+create index if not exists alert_log_at_idx on alert_log (at);

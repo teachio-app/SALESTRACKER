@@ -3,6 +3,7 @@ import { fetchNewEmails, type MailAccount } from "@/lib/mail";
 import { parseSneakerSale, type SneakerSale } from "@/lib/parsers/sneakers";
 import { notifySneakerSale, sneakerAlertPayload } from "@/lib/discord";
 import { sneakerSaleMail } from "@/lib/mailFilter";
+import { claimAlert, releaseAlert, isMissingTable } from "@/lib/alertLog";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -96,17 +97,39 @@ async function handle(req: Request) {
     stateKey: STATE_KEY, maxPerRun: MAX_PER_RUN, account: acct, filter: sneakerSaleMail,
   });
 
-  const stats = { read: emails.length, sales: 0, notified: 0, platforms: [] as string[], info };
+  const stats = {
+    read: emails.length, sales: 0, notified: 0, duplicate: 0,
+    dedupe: "alert_log", platforms: [] as string[], info,
+  };
   let failed = false;
+
+  // Same memory the Seatix alerter needed, for the same reason: this module
+  // writes no rows, so without it a mail read twice pings twice. StockX in
+  // particular follows every sale with "Time to Ship your item" — filtered out
+  // by subject today, but a wording change would put the sale back in range.
+  const seenThisRun = new Set<string>();
 
   for (const email of emails) {
     const sale = parseSneakerSale(email);
     if (!sale) continue; // both platforms send plenty that isn't a sale
     stats.sales++;
+
+    if (seenThisRun.has(sale.externalId)) { stats.duplicate++; continue; }
+    seenThisRun.add(sale.externalId);
+
+    const claim = await claimAlert("sneaker", sale.externalId);
+    if (!claim.ok && claim.reason === "duplicate") { stats.duplicate++; continue; }
+    if (!claim.ok) {
+      stats.dedupe = isMissingTable(claim)
+        ? "in-run only — alert_log is missing; run supabase/schema.sql"
+        : `in-run only — ${claim.detail}`;
+    }
+
     if (await notifySneakerSale(sale)) {
       stats.notified++;
       if (!stats.platforms.includes(sale.platform)) stats.platforms.push(sale.platform);
     } else {
+      if (claim.ok) await releaseAlert("sneaker", sale.externalId);
       failed = true; // hold the watermark so the alert is retried next run
     }
   }

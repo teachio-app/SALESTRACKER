@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { fetchNewEmails } from "@/lib/mail";
 import { parseSeatix } from "@/lib/parsers/seatix";
 import { notifySeatixSale, seatixAlertPayload } from "@/lib/discord";
+import { claimAlert, releaseAlert, isMissingTable } from "@/lib/alertLog";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -91,15 +92,43 @@ export async function GET(req: Request) {
 
   const { emails, commit, info } = await fetchNewEmails({ stateKey: STATE_KEY, maxPerRun: MAX_PER_RUN });
 
-  const stats = { read: emails.length, seatix: 0, notified: 0, info };
+  const stats = {
+    read: emails.length, seatix: 0, notified: 0, duplicate: 0, dedupe: "alert_log", info,
+  };
   let failed = false;
+
+  // Seatix delivers every confirmation TWICE (same second, consecutive UIDs), so
+  // both copies almost always land in the SAME batch. This set catches that case
+  // without a round-trip; alert_log catches the rest — copies split across two
+  // runs, and two runs racing each other. See lib/alertLog.ts.
+  const seenThisRun = new Set<string>();
 
   for (const email of emails) {
     const sale = parseSeatix(email);
     if (!sale) continue; // anything that isn't a Seatix sale is not this module's business
     stats.seatix++;
+
+    if (seenThisRun.has(sale.externalId)) { stats.duplicate++; continue; }
+    seenThisRun.add(sale.externalId);
+
+    const claim = await claimAlert("seatix", sale.externalId);
+    if (!claim.ok && claim.reason === "duplicate") { stats.duplicate++; continue; }
+    // Persistence unavailable (table not created yet, or the DB is unreachable).
+    // Post anyway — a duplicate alert is an annoyance, a missed sale is the bug
+    // this module exists to prevent — but say so in the response rather than
+    // degrading in silence.
+    if (!claim.ok) {
+      stats.dedupe = isMissingTable(claim)
+        ? "in-run only — alert_log is missing; run supabase/schema.sql"
+        : `in-run only — ${claim.detail}`;
+    }
+
     if (await notifySeatixSale(sale)) stats.notified++;
-    else failed = true; // hold the watermark so the alert is retried next run
+    else {
+      // Hand the claim back or the retry would be swallowed as a duplicate.
+      if (claim.ok) await releaseAlert("seatix", sale.externalId);
+      failed = true; // hold the watermark so the alert is retried next run
+    }
   }
 
   // Same rule as the sale poller: the watermark only advances on a clean run,
