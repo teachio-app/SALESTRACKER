@@ -1,10 +1,12 @@
 // Run: npx tsx lib/alertLog.test.ts
 // The alerters' duplicate guard.
 //
-// What this protects: Seatix delivers every sale confirmation to the mailbox
-// TWICE — same second, same confirmation number, consecutive UIDs. The tracker
-// never showed a double because tickets.external_id is unique; the standalone
-// alerter, which writes no rows, pinged Discord twice for months.
+// What this protects: when the same sale mail is read twice, the alerters must
+// announce it once. A forwarding loop on the mail account was delivering every
+// message twice — same second, consecutive UIDs — and the tracker never showed a
+// double because tickets.external_id is unique, while the standalone alerter,
+// which writes no rows, pinged Discord twice. The loop is off; a repeat read is
+// still possible any number of other ways.
 //
 // Two things have to hold for the fix to work, and both are tested here:
 //   1. the two copies must produce the SAME key, or there is nothing to dedupe;
@@ -44,8 +46,8 @@ const seatixMail = (confirmation: string) => ({
 
 console.log("\nthe two delivered copies collapse to one key");
 {
-  // The real pair, uid 174687 and 174688 — Seatix reuses the confirmation
-  // number, so both copies are byte-identical where it counts.
+  // The real pair, uid 174687 and 174688 — a duplicate delivery of one mail, so
+  // both copies are byte-identical, confirmation number included.
   const a = parseSeatix(seatixMail("EC6DC23D") as never);
   const b = parseSeatix(seatixMail("EC6DC23D") as never);
   check("both copies parse", [!!a, !!b], [true, true]);

@@ -304,10 +304,14 @@ create trigger todos_stamp_done
 -- What the standalone alerters (Seatix, sneakers) have already announced.
 --
 -- Those modules write nothing to `tickets` by design, which left them with no
--- memory — and Seatix delivers every confirmation to the mailbox TWICE (same
--- second, same confirmation number, consecutive UIDs), so every sale pinged
--- Discord twice. The tracker never showed a double because tickets.external_id
--- is unique; the alerters had no equivalent. This is it.
+-- memory. It surfaced when a forwarding loop on the mail account delivered every
+-- message twice (same second, consecutive UIDs) and every sale pinged Discord
+-- twice. The tracker never showed a double because tickets.external_id is
+-- unique; the alerters had no equivalent. This is it.
+--
+-- The loop has been turned off, so this now guards the general case rather than
+-- that one: any repeat read pings again — a hand-rewound watermark, a
+-- redelivered mail, overlapping cron runs.
 --
 -- The primary key is doing real work: two cron runs can overlap and both hold
 -- the same message, and only a uniqueness constraint can decide which one gets

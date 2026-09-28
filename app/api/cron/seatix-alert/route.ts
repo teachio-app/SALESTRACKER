@@ -97,10 +97,10 @@ export async function GET(req: Request) {
   };
   let failed = false;
 
-  // Seatix delivers every confirmation TWICE (same second, consecutive UIDs), so
-  // both copies almost always land in the SAME batch. This set catches that case
-  // without a round-trip; alert_log catches the rest — copies split across two
-  // runs, and two runs racing each other. See lib/alertLog.ts.
+  // A duplicate delivery lands in the SAME batch (same second, consecutive
+  // UIDs), so this set catches the common case without a round-trip; alert_log
+  // catches the rest — copies split across two runs, and two runs racing each
+  // other. See lib/alertLog.ts for what exposed this.
   const seenThisRun = new Set<string>();
 
   for (const email of emails) {

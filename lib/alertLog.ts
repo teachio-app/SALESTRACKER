@@ -5,21 +5,31 @@
 // purpose: they are notifiers, not bookkeepers. That independence cost them the
 // one thing the sale poller gets for free — a memory.
 //
-// It showed up as every Seatix sale arriving in Discord twice. The cause was not
-// in this app at all: Seatix delivers each confirmation to the mailbox TWICE,
-// same second, same confirmation number, consecutive UIDs.
+// It showed up as every Seatix sale arriving in Discord twice. The cause was
+// outside this app: a forwarding rule on the account was sending mail round in a
+// loop, so every message was delivered twice — same second, same confirmation
+// number, consecutive UIDs.
 //
 //     2026-09-26T15:03  uid 174687  Sale confirmation #EC6DC23D
 //     2026-09-26T15:03  uid 174688  Sale confirmation #EC6DC23D
 //
-// All 12 sales in a 1,500-message window, without exception. The tracker never
-// showed a double because `tickets.external_id` is unique, so the second copy
-// landed in `duplicate` and stopped there. The alerter had no such guard and
-// dutifully pinged twice.
+// All 12 sales in a 1,500-message window, without exception. (Worth recording
+// how that looked from in here, because the reading was wrong at first: the
+// duplication was measured correctly and then blamed on Seatix. It was the
+// mailbox, and the forwarding has since been turned off.)
 //
-// So the fix is a memory of its own, and one that a DATABASE enforces rather
-// than a variable: two cron runs can overlap, and then both hold the same
-// message and both decide to post. A primary key is the only thing that settles
+// The tracker never showed a double because `tickets.external_id` is unique, so
+// the second copy landed in `duplicate` and stopped there. The alerter had no
+// such guard and dutifully pinged twice.
+//
+// The loop is gone, so this is now insurance rather than a live fix — but it is
+// insurance against something the forwarding rule only exposed. Any repeat read
+// pings again: a watermark rewound by hand (which has happened), a mail
+// redelivered, a platform that genuinely sends twice.
+//
+// And it is a DATABASE that enforces it, not a variable: two cron runs can
+// overlap — nothing to do with forwarding — and then both hold the same message
+// and both decide to post. A primary key is the only thing that settles
 // that race — whichever run inserts first wins and the other gets 23505.
 //
 // CLAIM BEFORE POSTING, RELEASE ON FAILURE. Claiming after a successful post
