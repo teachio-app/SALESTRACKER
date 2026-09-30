@@ -331,3 +331,92 @@ create table if not exists alert_log (
 alter table alert_log enable row level security;
 
 create index if not exists alert_log_at_idx on alert_log (at);
+
+-- ── Market capture ───────────────────────────────────────────────────
+-- Sales-tracker data for events on the resale market, captured from pages the
+-- owner opens in their own browser and posted here by a small extension.
+--
+-- Why it exists: the tracker knows everything about tickets already bought and
+-- nothing about the ones worth buying. "Is this event moving?" is answered by
+-- sell-through, velocity and how deep the supply is, and none of that is in a
+-- mailbox.
+--
+-- Why it is stored HERE rather than read on demand: this data has no archive.
+-- Every tracker's history starts the day it began watching — which is why a
+-- January 2027 event can show "first sale: 15 Sep 2026" — and nothing can
+-- backfill it. Days not captured are gone. So capture is cheap and permanent,
+-- and the analysis is written later against whatever has accumulated.
+
+create table if not exists market_events (
+  id                uuid primary key default gen_random_uuid(),
+  source            text not null,            -- where the capture came from
+  source_event_id   text not null,            -- that source's id, from the URL
+  url               text,
+  name              text not null,
+  event_date        date,
+  venue             text,
+  city              text,
+  country           text,
+  -- How closely this event is being followed. Set by hand; the capture never
+  -- downgrades it, so marking something 'owned' sticks.
+  tier              text not null default 'watch',
+  first_seen_at     timestamptz not null default now(),
+  last_captured_at  timestamptz,
+  unique (source, source_event_id)
+);
+
+-- One row per capture: the statistics tiles, as they read at that moment.
+-- THIS is the time series. Two captures days apart give velocity, supply
+-- movement and price drift that no single page view can show.
+--
+-- Every measure is nullable on purpose. A tile that hasn't loaded reads "N/A",
+-- and null is the honest record of that — 0 would read as a sell-out.
+create table if not exists market_snapshots (
+  id                uuid primary key default gen_random_uuid(),
+  event_id          uuid not null references market_events (id) on delete cascade,
+  captured_at       timestamptz not null,
+  total_sales       int,
+  total_tickets     int,
+  average_price     numeric(12,2),
+  floor_price       numeric(12,2),
+  sales_24h         int,
+  first_sale        date,
+  listings          int,
+  tickets_available int,
+  currency          text not null default 'EUR',
+  created_at        timestamptz not null default now()
+);
+
+-- Individual sales, deduped across captures.
+--
+-- `fingerprint` is the seat identity when seats are readable (the same seats
+-- cannot sell twice) and a time-bucketed shape when they are not — the page
+-- sometimes renders junk like "from - froo". See lib/market/parse.ts.
+--
+-- `sold_at_approx` is derived from "9h ago" and the capture time, so it is
+-- worth roughly ±30 minutes; `precision` says how much to trust it and
+-- `raw_update` keeps the original text for when a reading turns out wrong.
+create table if not exists market_sales (
+  id             uuid primary key default gen_random_uuid(),
+  event_id       uuid not null references market_events (id) on delete cascade,
+  fingerprint    text not null,
+  price          numeric(12,2),
+  qty            int,
+  currency       text not null default 'EUR',
+  section        text,
+  seat_row       text,
+  seats          text,
+  sold_at_approx timestamptz,
+  precision      text,
+  raw_update     text,
+  first_seen_at  timestamptz not null default now(),
+  unique (event_id, fingerprint)
+);
+
+alter table market_events    enable row level security;
+alter table market_snapshots enable row level security;
+alter table market_sales     enable row level security;
+
+create index if not exists market_snapshots_event_idx on market_snapshots (event_id, captured_at desc);
+create index if not exists market_sales_event_idx     on market_sales (event_id, sold_at_approx desc);
+create index if not exists market_events_date_idx     on market_events (event_date);

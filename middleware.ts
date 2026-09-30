@@ -12,12 +12,18 @@ import { AUTH_COOKIE, authToken, safeEqual } from "@/lib/auth";
 //
 // Protects the dashboard and /api/tickets. Skips /api/cron/poll-mail (its own
 // CRON_SECRET Bearer auth) and /login + /api/login (must be reachable logged-out).
+//
+// /api/market is skipped for the same reason as /api/cron: it carries its own
+// Bearer token and is called by the browser extension, which has no session
+// cookie. It also needs its CORS preflight to get through — an OPTIONS request
+// never carries credentials, so a matched preflight would 401 and the capture
+// would fail before the POST was ever sent.
 // ─────────────────────────────────────────────────────────────
 
 export const config = {
   // Also skip the app icon so the browser-tab favicon loads without a session
   // (otherwise /icon.svg redirects to /login and the tab shows no icon).
-  matcher: ["/((?!api/cron|_next|favicon.ico|icon.svg).*)"],
+  matcher: ["/((?!api/cron|api/market|_next|favicon.ico|icon.svg).*)"],
 };
 
 export async function middleware(req: NextRequest) {

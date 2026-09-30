@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "DeskTracker Market Capture",
+  "version": "1.0.0",
+  "description": "Saves the Sales Tracker pages you open into your own DeskTracker, so you build a price and volume history nobody can take away.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://*.tikeymanager.com/*"
+  ],
+  "options_page": "options.html",
+  "action": {
+    "default_title": "DeskTracker Market Capture — open Options to configure"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.tikeymanager.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>DeskTracker Market Capture</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --fg: #1a1a1a;
+        --muted: #6b7280;
+        --line: #e5e7eb;
+        --accent: #2563eb;
+        --ok: #15803d;
+        --bad: #b91c1c;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #111317;
+          --fg: #e8eaed;
+          --muted: #9aa0a6;
+          --line: #2a2e35;
+          --accent: #60a5fa;
+          --ok: #4ade80;
+          --bad: #f87171;
+        }
+      }
+      body {
+        margin: 0;
+        padding: 28px;
+        background: var(--bg);
+        color: var(--fg);
+        font: 14px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+        max-width: 560px;
+      }
+      h1 { font-size: 17px; margin: 0 0 4px; }
+      p.sub { color: var(--muted); margin: 0 0 22px; }
+      label { display: block; font-weight: 600; margin: 16px 0 6px; }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 9px 11px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: transparent;
+        color: var(--fg);
+        font: inherit;
+        font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        font-size: 13px;
+      }
+      input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
+      small { display: block; color: var(--muted); margin-top: 5px; font-size: 12.5px; }
+      button {
+        margin-top: 22px;
+        padding: 9px 18px;
+        border: 0;
+        border-radius: 7px;
+        background: var(--accent);
+        color: #fff;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      #status { margin-left: 12px; font-weight: 600; }
+      #status.ok { color: var(--ok); }
+      #status.bad { color: var(--bad); }
+      .note {
+        margin-top: 26px;
+        padding-top: 18px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>DeskTracker Market Capture</h1>
+    <p class="sub">Saves the Sales Tracker pages you open into your own tracker.</p>
+
+    <label for="endpoint">Ingest URL</label>
+    <input id="endpoint" type="url" placeholder="https://your-app.vercel.app/api/market/ingest" />
+    <small>Your DeskTracker deployment, with <code>/api/market/ingest</code> on the end.</small>
+
+    <label for="token">Ingest token</label>
+    <input id="token" type="password" placeholder="MARKET_INGEST_TOKEN" />
+    <small>The value of <code>MARKET_INGEST_TOKEN</code>. Not your cron secret — a different one, on purpose.</small>
+
+    <div>
+      <button id="save">Save</button><span id="status"></span>
+    </div>
+
+    <p class="note">
+      This reads only pages you open yourself. It never browses, never requests a
+      page you did not ask for, and sends nothing anywhere except the URL above.
+      Open the browser console on a Sales Tracker page to see each capture as it
+      happens.
+    </p>
+
+    <script src="options.js"></script>
+  </body>
+</html>
