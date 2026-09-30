@@ -1,10 +1,8 @@
 // Run: npx tsx lib/market/vgg.test.ts
 //
-// Turning a pasted viagogo link into an event. The id path is exact; the name
-// path is a guess, and most of these tests are about making sure it refuses to
-// guess when the link doesn't actually say which event it means.
+// Turning a pasted viagogo link into the event id the Market page reads by.
 
-import { parseVggLink, matchByName } from "./vgg";
+import { parseVggLink } from "./vgg";
 
 let failed = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -51,43 +49,6 @@ console.log("\nwhat is not a viagogo link");
   check("empty", parseVggLink(""), null);
   check("nothing", parseVggLink(null), null);
   check("a too-short number is not an id", parseVggLink("12345"), null);
-}
-
-console.log("\nmatching by name");
-{
-  const events = [
-    { id: "nba", name: "NBA Manchester: New Orleans Pelicans vs San Antonio Spurs", event_date: "2027-01-17" },
-    { id: "mufc", name: "Manchester United vs Arsenal", event_date: "2026-12-01" },
-    { id: "celine", name: "Céline Dion", event_date: "2026-10-05" },
-  ];
-  const today = "2026-09-30";
-
-  check("the NBA link finds the NBA game",
-    matchByName(parseVggLink(NBA_LINK)!.words, events, today)?.event.id, "nba");
-  check("…with its score", matchByName(parseVggLink(NBA_LINK)!.words, events, today)?.score, 4);
-
-  // One shared word is how "Manchester United" gets matched to "NBA Manchester".
-  check("one word in common is not enough", matchByName(["manchester"], events, today), null);
-
-  // Diacritics are folded both ways.
-  check("celine finds Céline", matchByName(["celine", "dion"], events, today)?.event.id, "celine");
-
-  // Two events equally matched: the link doesn't say which, so neither.
-  const twoNights = [
-    { id: "n1", name: "Coldplay Wembley Stadium", event_date: "2027-06-01" },
-    { id: "n2", name: "Coldplay Wembley Stadium", event_date: "2027-06-02" },
-  ];
-  check("a tie is refused", matchByName(["coldplay", "wembley"], twoNights, today), null);
-
-  // Same tour, same city, a year apart: prefer the one still to come.
-  const yearApart = [
-    { id: "last", name: "Coldplay Wembley", event_date: "2025-06-01" },
-    { id: "next", name: "Coldplay Wembley", event_date: "2027-06-01" },
-  ];
-  check("upcoming beats past", matchByName(["coldplay", "wembley"], yearApart, today)?.event.id, "next");
-
-  check("no words, no match", matchByName([], events, today), null);
-  check("no events, no match", matchByName(["nba", "pelicans"], [], today), null);
 }
 
 console.log(failed === 0 ? "\nAll viagogo-link tests passed.\n" : `\n${failed} test(s) FAILED.\n`);

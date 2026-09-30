@@ -88,6 +88,8 @@ export default function MarketChart({
   at,
   series,
   format,
+  dots,
+  bare,
 }: {
   title: string;
   sub: string;
@@ -96,6 +98,10 @@ export default function MarketChart({
   series: Series[];
   /** Full value for the tooltip and end labels. The axis uses a compact form. */
   format: (n: number) => string;
+  /** A marker on every point, as the sales tracker draws its daily chart. */
+  dots?: boolean;
+  /** No card or caption — for charts that sit inside a panel with its own title. */
+  bare?: boolean;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [W, setW] = useState(600);
@@ -183,23 +189,30 @@ export default function MarketChart({
     })
     .join("; ");
 
+  // The legend is the identity channel; the end labels only supplement it. A
+  // single series needs none — the title names it.
+  const legend = series.length > 1 && (
+    <div className="chart-legend">
+      {series.map((s) => (
+        <span key={s.key} className="legend-item">
+          <span className="legend-key" style={{ background: s.color }} aria-hidden />
+          {s.label}
+        </span>
+      ))}
+    </div>
+  );
+
   return (
-    <figure className="chart-card">
-      <figcaption className="cap-split">
-        <div>
-          <span className="chart-title">{title}</span>
-          <span className="chart-sub">{sub}</span>
-        </div>
-        {/* The legend is the identity channel; the end labels only supplement it. */}
-        <div className="chart-legend">
-          {series.map((s) => (
-            <span key={s.key} className="legend-item">
-              <span className="legend-key" style={{ background: s.color }} aria-hidden />
-              {s.label}
-            </span>
-          ))}
-        </div>
-      </figcaption>
+    <figure className={bare ? "chart-bare" : "chart-card"}>
+      {bare ? legend : (
+        <figcaption className="cap-split">
+          <div>
+            <span className="chart-title">{title}</span>
+            <span className="chart-sub">{sub}</span>
+          </div>
+          {legend}
+        </figcaption>
+      )}
 
       <div ref={box}>
         <svg
@@ -229,6 +242,13 @@ export default function MarketChart({
             <path key={s.key} d={path(s.values)} fill="none" stroke={s.color} strokeWidth={2}
                   strokeLinejoin="round" strokeLinecap="round" />
           ))}
+
+          {/* Markers on every point, when asked for and not so dense they merge. */}
+          {dots && xs.length <= 400 && series.map((s) =>
+            s.values.map((v, i) =>
+              v != null ? <circle key={`d-${s.key}-${i}`} cx={x(i)} cy={y(v)} r={xs.length > 150 ? 2.2 : 3} fill={s.color} /> : null
+            )
+          )}
 
           {/* A capture with no neighbour on either side has no line to sit on;
               without a dot it would simply not be drawn. */}

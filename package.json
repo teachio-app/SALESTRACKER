@@ -7,9 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "tsx lib/parsers/parsers.test.ts && tsx lib/money.test.ts && tsx lib/discord.test.ts && tsx lib/mail.test.ts && tsx lib/venueCountry.test.ts && tsx lib/mailFilter.test.ts && tsx lib/pushover.test.ts && tsx lib/discordRelay.test.ts && tsx lib/todo.test.ts && tsx lib/monthly.test.ts && tsx lib/sneakers.test.ts && tsx lib/alertLog.test.ts && tsx lib/market/parse.test.ts && tsx lib/market/summary.test.ts && tsx lib/market/vgg.test.ts"
+    "test": "tsx lib/parsers/parsers.test.ts && tsx lib/money.test.ts && tsx lib/discord.test.ts && tsx lib/mail.test.ts && tsx lib/venueCountry.test.ts && tsx lib/mailFilter.test.ts && tsx lib/pushover.test.ts && tsx lib/discordRelay.test.ts && tsx lib/todo.test.ts && tsx lib/monthly.test.ts && tsx lib/sneakers.test.ts && tsx lib/alertLog.test.ts && tsx lib/market/parse.test.ts && tsx lib/market/vgg.test.ts && tsx lib/market/deep.test.ts && tsx lib/market/features.test.ts && tsx lib/market/analysis.test.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.129.0",
     "@supabase/supabase-js": "^2.45.0",
     "imapflow": "^1.0.164",
     "jspdf": "^2.5.2",

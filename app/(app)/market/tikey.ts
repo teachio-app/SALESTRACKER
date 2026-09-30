@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { Capture } from "@/lib/market/types";
+import type { Deep } from "@/lib/market/deep";
 
 // ─────────────────────────────────────────────────────────────
 // Talking to the "DeskTracker × Tikey" browser extension from the Market page.
@@ -12,8 +13,8 @@ import type { Capture } from "@/lib/market/types";
 // through window.postMessage to the extension's bridge script, which only runs
 // on this tracker's own address.
 //
-// The page then stores the result through /api/market/capture with the login
-// it already has. The extension holds no secret and never talks to the server.
+// Nothing is stored: the page renders what came back, and a new Find is a new
+// read. The extension holds no secret and never talks to the server.
 // ─────────────────────────────────────────────────────────────
 
 export type ReadDiag = {
@@ -38,6 +39,8 @@ export type ReadResult = {
   missing: string[];
   /** The page's text lines, sent only when something is missing — to fix the reader from. */
   outline?: string[];
+  /** The JSON the page's own scripts loaded, from the extension's tap (v3+). */
+  deep?: Deep;
 };
 
 type FromExt =
@@ -98,22 +101,10 @@ export function readFromTikey(vggId: string, onProgress?: (message: string) => v
       if (m.type === "progress") onProgress?.(m.message);
       else if (m.type === "result") {
         clearTimeout(t); off();
-        resolve({ capture: m.capture, missing: m.missing ?? [], outline: m.outline });
+        resolve({ capture: m.capture, missing: m.missing ?? [], outline: m.outline, deep: m.deep });
       }
       else if (m.type === "error") { clearTimeout(t); off(); reject(new ReadError(m.message, m.diag)); }
     });
     toExt({ type: "read", id, vggId });
   });
-}
-
-/** Store a capture with the page's own session. Returns the event's id. */
-export async function saveCapture(capture: Capture, vggEventId: string): Promise<string> {
-  const res = await fetch("/api/market/capture", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ capture, vggEventId }),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
-  return body.event.id as string;
 }

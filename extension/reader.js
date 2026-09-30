@@ -188,7 +188,18 @@ function readEvent() {
   const sourceEventId = segments[segments.length - 1] || "";
 
   const { dateText, venue, city, country } = readHeaderLines(h);
-  return { sourceEventId, url: location.href, name, dateText, venue, city, country, vggUrl: readVggLink(h) };
+  return { sourceEventId, url: location.href, name, dateText, venue, city, country, vggUrl: readVggLink(h), imageUrl: readImage(h) };
+}
+
+/** The event's picture beside the title, when there is one. */
+function readImage(h) {
+  let scope = h ? h.parentElement : null;
+  for (let up = 0; up < 4 && scope; up++) {
+    const img = [...scope.querySelectorAll("img")].find((i) => (i.naturalWidth || i.width) >= 40 && /^https?:/i.test(i.currentSrc || i.src));
+    if (img) return img.currentSrc || img.src;
+    scope = scope.parentElement;
+  }
+  return "";
 }
 
 /** "Sunday, January 17, 2027", "January 17, 2027", "17 January 2027", "17.01.2027". */
@@ -286,6 +297,45 @@ function buildCapture() {
   return { source: "tikey", capturedAt: new Date().toISOString(), currency: readCurrency(), event, stats: readStats(), sales: readSales() };
 }
 
+/**
+ * Everything beyond what's on screen: the JSON the page's scripts fetched (kept
+ * by tap.js), chart series, and JSON embedded in the page itself. Handed to the
+ * tracker as-is — it is parsed THERE, where the parsing is tested and a fix is a
+ * deploy rather than a reinstall (lib/market/deep.ts).
+ */
+function collectDeep() {
+  return new Promise((resolve) => {
+    const id = Math.random().toString(36).slice(2);
+    let settled = false;
+    const done = (v) => {
+      if (settled) return;
+      settled = true;
+      window.removeEventListener("message", on);
+      resolve(v);
+    };
+    const on = (e) => {
+      if (e.source !== window || !e.data || e.data.source !== "desktracker-tap" || e.data.id !== id) return;
+      done({ payloads: e.data.payloads || [], apex: e.data.apex || [], embedded: embeddedJson(), tap: true });
+    };
+    window.addEventListener("message", on);
+    window.postMessage({ source: "desktracker-reader", type: "collect", id }, location.origin);
+    // No tap (an older install, or a page it couldn't hook): carry on without it.
+    setTimeout(() => done({ payloads: [], apex: [], embedded: embeddedJson(), tap: false }), 1500);
+  });
+}
+
+/** JSON a server-rendered page embeds for its own scripts, e.g. Next.js's __NEXT_DATA__. */
+function embeddedJson() {
+  const out = [];
+  for (const s of document.querySelectorAll('script[type="application/json"], script#__NEXT_DATA__')) {
+    const t = (s.textContent || "").trim();
+    if (!t || t.length > 5_000_000) continue;
+    try { out.push({ url: `#${s.id || "inline-json"}`, at: Date.now(), json: JSON.parse(t) }); } catch { /* not JSON */ }
+    if (out.length >= 10) break;
+  }
+  return out;
+}
+
 /** Fields a complete read should have, named — so a partial read can say what's missing. */
 function missingFields(c) {
   const miss = [];
@@ -369,9 +419,10 @@ const send = (msg) => chrome.runtime.sendMessage(msg).catch(() => {});
       const goodEnough = haveTotals && elapsed >= COMPLETE_BY;
       if (settled && (complete || goodEnough)) {
         const missing = missingFields(c);
+        const deep = await collectDeep();
         // The outline travels only when something is missing: it exists to fix
         // the reader, and a complete read has nothing to fix.
-        send({ type: "captured", capture: c, missing, ...(missing.length ? { outline: outline() } : {}) });
+        send({ type: "captured", capture: c, missing, deep, ...(missing.length ? { outline: outline() } : {}) });
         return;
       }
     }

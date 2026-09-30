@@ -1,9 +1,11 @@
 {
   "manifest_version": 3,
   "name": "DeskTracker × Tikey",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Lets your DeskTracker read a Tikey Sales Tracker page in your own browser, when you ask for it from the tracker.",
-  "permissions": ["storage"],
+  "permissions": [
+    "storage"
+  ],
   "host_permissions": [
     "https://www.tikeymanager.com/*"
   ],
@@ -12,13 +14,32 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://www.tikeymanager.com/salestracker/*"],
-      "js": ["reader.js"],
+      "matches": [
+        "https://www.tikeymanager.com/salestracker/*"
+      ],
+      "js": [
+        "tap.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://www.tikeymanager.com/salestracker/*"
+      ],
+      "js": [
+        "reader.js"
+      ],
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://ticket-tracker-two.vercel.app/*", "http://localhost/*"],
-      "js": ["bridge.js"],
+      "matches": [
+        "https://ticket-tracker-two.vercel.app/*",
+        "http://localhost/*"
+      ],
+      "js": [
+        "bridge.js"
+      ],
       "run_at": "document_start"
     }
   ]

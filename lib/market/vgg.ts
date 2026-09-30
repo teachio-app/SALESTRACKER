@@ -1,19 +1,13 @@
 // ─────────────────────────────────────────────────────────────
 // Viagogo links → an event to look up.
 //
-// Two ways in, in order of trust:
+// Viagogo event pages end in "/E-<digits>", and that id is all the Market page
+// needs: Tikey's Sales Tracker page for the event is built from it
+// (…/salestracker/viagogo/event/E-<id>). The name words in the path are kept
+// for messages, never used to guess an event.
 //
-//   1. THE EVENT ID. Viagogo event pages end in "/E-<digits>". When the capture
-//      saw a viagogo link on the page it recorded that id, and a lookup by id is
-//      exact.
-//   2. THE SLUG. The same URL carries the event's name in its path
-//      ("…/New-Orleans-Pelicans-Tickets/E-…"). If no capture carries the id,
-//      the name words are matched against captured event names. That is a
-//      guess, and it is labelled as one all the way to the Discord reply —
-//      a number attributed to the wrong event is worse than no number.
-//
-// A link that yields neither is reported as unreadable rather than matched on
-// whatever scraps it has. The owner can paste it back and the shape gets added.
+// A link without an id is reported as such rather than matched on whatever
+// scraps it has.
 // ─────────────────────────────────────────────────────────────
 
 export type VggRef = {
@@ -70,47 +64,4 @@ export function parseVggLink(input: string | null | undefined): VggRef | null {
     .filter((w) => w.length >= 3 && !/^\d+$/.test(w) && !/^e$/.test(w) && !NOISE.has(w));
 
   return { eventId, words: [...new Set(words)], url: url.toString() };
-}
-
-/** Fold for comparison: lower-case, no diacritics. "Rosalía" matches "rosalia". */
-function fold(s: string): string {
-  return s.toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "");
-}
-
-export type NameCandidate = { id: string; name: string; event_date: string | null };
-
-/**
- * Best captured event for a link's name words, or null when there is no
- * confident single answer.
- *
- * "Confident" means at least two words in common AND strictly more than the
- * runner-up. One shared word is how "Manchester United" gets matched to "NBA
- * Manchester"; a tie means the link doesn't say which of two events it is, and
- * picking one would be a coin toss presented as a fact.
- *
- * Past events are skipped when there is an upcoming one to prefer — the same
- * tour visits the same city year after year.
- */
-export function matchByName(
-  words: string[],
-  events: NameCandidate[],
-  today: string
-): { event: NameCandidate; score: number } | null {
-  if (words.length === 0 || events.length === 0) return null;
-  const wanted = words.map(fold);
-
-  const scored = events
-    .map((e) => {
-      const name = fold(e.name);
-      const score = wanted.filter((w) => name.includes(w)).length;
-      const upcoming = !e.event_date || e.event_date >= today;
-      return { e, score, upcoming };
-    })
-    .filter((x) => x.score >= 2);
-  if (!scored.length) return null;
-
-  const pool = scored.some((x) => x.upcoming) ? scored.filter((x) => x.upcoming) : scored;
-  pool.sort((a, b) => b.score - a.score);
-  if (pool.length > 1 && pool[0].score === pool[1].score) return null;
-  return { event: pool[0].e, score: pool[0].score };
 }

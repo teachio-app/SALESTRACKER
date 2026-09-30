@@ -50,6 +50,8 @@ export type RawEvent = {
   country?: string;       // "United Kingdom"
   /** The page's link out to the event on viagogo, when it has one. */
   vggUrl?: string;
+  /** The event's picture beside the title, when there is one. */
+  imageUrl?: string;
 };
 
 /** The whole POST body. */
