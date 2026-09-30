@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { summarise, type SummarySnapshot } from "@/lib/market/summary";
+import { summarise, type SummarySale, type SummarySnapshot } from "@/lib/market/summary";
 import { parseVggLink, matchByName } from "@/lib/market/vgg";
 
 export const dynamic = "force-dynamic";
@@ -44,18 +44,46 @@ async function list() {
   if (snapErr) return NextResponse.json({ error: snapErr.message }, { status: 500 });
 
   const latestTwo = new Map<string, SummarySnapshot[]>();
+  // Counted from every snapshot, not from the two kept — the two are what the
+  // summary needs, the count is how many times the event has been read.
+  const reads = new Map<string, number>();
   for (const s of snaps ?? []) {
+    reads.set(s.event_id, (reads.get(s.event_id) ?? 0) + 1);
     const list = latestTwo.get(s.event_id) ?? [];
     if (list.length < 2) list.push(s as SummarySnapshot);
     latestTwo.set(s.event_id, list);
+  }
+
+  // Where the page's own 24h tile wasn't read, the summary falls back to
+  // counting recorded sales in the day before the read. It needs those rows —
+  // only for those events, and only from around that day.
+  const noTile = [...latestTwo.entries()].filter(([, l]) => l[0]?.sales_24h == null);
+  const recent = new Map<string, SummarySale[]>();
+  if (noTile.length) {
+    const earliest = Math.min(...noTile.map(([, l]) => Date.parse(l[0].captured_at)));
+    // Two hours past the 24h window, so a row just outside it can show the
+    // window was fully covered.
+    const since = new Date(earliest - 26 * 3_600_000).toISOString();
+    const { data: rows, error: salesErr } = await db
+      .from("market_sales")
+      .select("event_id,price,qty,section,sold_at_approx")
+      .in("event_id", noTile.map(([id]) => id))
+      .gte("sold_at_approx", since)
+      .limit(10000);
+    if (salesErr) return NextResponse.json({ error: salesErr.message }, { status: 500 });
+    for (const r of rows ?? []) {
+      const list = recent.get(r.event_id) ?? [];
+      list.push(r as SummarySale);
+      recent.set(r.event_id, list);
+    }
   }
 
   const now = new Date();
   return NextResponse.json(
     events.map((e) => ({
       ...e,
-      captures: latestTwo.get(e.id)?.length ?? 0,
-      summary: summarise(e, latestTwo.get(e.id) ?? [], [], now),
+      captures: reads.get(e.id) ?? 0,
+      summary: summarise(e, latestTwo.get(e.id) ?? [], recent.get(e.id) ?? [], now),
     }))
   );
 }

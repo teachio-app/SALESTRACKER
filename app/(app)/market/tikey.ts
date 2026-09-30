@@ -31,10 +31,19 @@ export class ReadError extends Error {
   }
 }
 
+/** A read that worked — possibly with some fields the page didn't yield. */
+export type ReadResult = {
+  capture: Capture;
+  /** Human names of what couldn't be read, e.g. "event date", "“24h sales” tile". */
+  missing: string[];
+  /** The page's text lines, sent only when something is missing — to fix the reader from. */
+  outline?: string[];
+};
+
 type FromExt =
   | { source: "desktracker-ext"; type: "pong"; id: string; version: string }
   | { source: "desktracker-ext"; type: "progress"; id: string; message: string }
-  | { source: "desktracker-ext"; type: "result"; id: string; capture: Capture }
+  | ({ source: "desktracker-ext"; type: "result"; id: string } & ReadResult)
   | { source: "desktracker-ext"; type: "error"; id: string; message: string; diag?: ReadDiag };
 
 const newId = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -79,7 +88,7 @@ export function useTikeyHelper(): "checking" | "missing" | string {
  * reader actually found on the page — the thing needed to fix it if Tikey
  * changes its layout.
  */
-export function readFromTikey(vggId: string, onProgress?: (message: string) => void): Promise<Capture> {
+export function readFromTikey(vggId: string, onProgress?: (message: string) => void): Promise<ReadResult> {
   return new Promise((resolve, reject) => {
     const id = newId();
     // Longer than the extension's own limits, so its specific message wins.
@@ -87,7 +96,10 @@ export function readFromTikey(vggId: string, onProgress?: (message: string) => v
     const off = onExt((m) => {
       if (m.id !== id) return;
       if (m.type === "progress") onProgress?.(m.message);
-      else if (m.type === "result") { clearTimeout(t); off(); resolve(m.capture); }
+      else if (m.type === "result") {
+        clearTimeout(t); off();
+        resolve({ capture: m.capture, missing: m.missing ?? [], outline: m.outline });
+      }
       else if (m.type === "error") { clearTimeout(t); off(); reject(new ReadError(m.message, m.diag)); }
     });
     toExt({ type: "read", id, vggId });

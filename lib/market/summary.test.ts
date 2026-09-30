@@ -140,6 +140,35 @@ console.log("\nthe edges");
   check("3.5× spread is warned about", has(wide, /Wide spread: average is 3\.5×/), true);
 }
 
+console.log("\n24h sales when the page's tile couldn't be read");
+{
+  // The live Celine Dion read: tile missing, 50 captured rows, all recent.
+  const noTile = { ...NBA, sales_24h: null };
+  const at = (h: number) => new Date(Date.parse(NBA.captured_at) - h * 3_600_000).toISOString();
+  const recent = Array.from({ length: 6 }, (_, i) => ({ price: 200, qty: 2, section: "A", sold_at_approx: at(i + 1) }));
+
+  const partial = summarise(EVENT, [noTile], recent, THREE_HOURS_LATER);
+  // Rows reach back only 6 hours: a floor, not a rate.
+  check("rows short of 24h → counted", partial.derived.captured24h, { sales: 6, tickets: 12, complete: false });
+  check("…but not used as the 24h figure", partial.derived.sales24h, null);
+  check("…and no source claimed", partial.derived.sales24hSource, null);
+  check("…so no pace is invented from it", partial.derived.momentum, null);
+
+  const full = summarise(EVENT, [noTile], [...recent, { price: 150, qty: 1, section: "B", sold_at_approx: at(30) }], THREE_HOURS_LATER);
+  // One row older than 24h proves the window is covered.
+  check("rows reaching past 24h → complete", full.derived.captured24h, { sales: 6, tickets: 12, complete: true });
+  check("…used as the 24h figure", full.derived.sales24h, 6);
+  check("…from the captured rows", full.derived.sales24hSource, "captured");
+  check("…counted tickets replace the estimate", full.derived.tickets24hEst, 12);
+  check("…pace from it: 6 / 38.93", full.derived.momentum, 0.15);
+  check("…and the reading says where it came from",
+    has(full, /6 sales in 24h vs 38\.9\/day on average \(0\.2×, counted from captured sales\)/), true);
+
+  // The page's tile always wins when it was read.
+  const tile = summarise(EVENT, [NBA], [...recent, { price: 150, qty: 1, section: "B", sold_at_approx: at(30) }], THREE_HOURS_LATER);
+  check("tile read → the tile wins", [tile.derived.sales24h, tile.derived.sales24hSource], [17, "page"]);
+}
+
 console.log("\nprices from captured sales");
 {
   // A sale of 3 is three purchases at that price, not one.

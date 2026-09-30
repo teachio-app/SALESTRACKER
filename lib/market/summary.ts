@@ -62,7 +62,20 @@ export type Summary = {
     ticketsPerSale: number | null;
     daysSelling: number | null;
     avgSalesPerDay: number | null;
-    /** sales_24h ÷ average daily sales. 1 = selling at its usual pace. */
+    /**
+     * Sales in the last 24 hours, and where the number came from: the page's own
+     * "24h Sales" tile, or — when that tile couldn't be read — a count of the
+     * captured sale rows inside the 24 hours before the capture.
+     */
+    sales24h: number | null;
+    sales24hSource: "page" | "captured" | null;
+    /**
+     * The captured-rows count itself, always, with whether the rows reach back
+     * the full 24 hours. When they don't — the page lists only its latest
+     * sales — the count is a floor ("at least"), never used as the rate.
+     */
+    captured24h: { sales: number; tickets: number; complete: boolean } | null;
+    /** sales in 24h ÷ average daily sales. 1 = selling at its usual pace. */
     momentum: number | null;
     /** Share of all tickets ever offered that have sold. */
     sellThrough: number | null;
@@ -160,15 +173,43 @@ export function summarise(
   // At least one day, or a first sale this morning divides by zero.
   const daysSelling = sellingDays == null ? null : Math.max(1, sellingDays);
   const avgSalesPerDay = ratio(latest?.total_sales ?? null, daysSelling);
-  const momentum = ratio(latest?.sales_24h ?? null, avgSalesPerDay);
+
+  // Captured sale rows inside the 24 hours before the latest capture. The rows
+  // only reach back as far as the page listed, so the count is complete only if
+  // some captured sale is at least 24 hours old — otherwise it is a floor.
+  let captured24h: Summary["derived"]["captured24h"] = null;
+  if (latest && sales.length) {
+    const end = Date.parse(latest.captured_at);
+    const start = end - DAY;
+    const times = sales.map((s) => (s.sold_at_approx ? Date.parse(s.sold_at_approx) : NaN)).filter((t) => !Number.isNaN(t));
+    if (times.length) {
+      let n = 0;
+      let tix = 0;
+      sales.forEach((s) => {
+        const t = s.sold_at_approx ? Date.parse(s.sold_at_approx) : NaN;
+        // A few minutes' grace past the capture: "just now" is stamped at it.
+        if (t >= start && t <= end + 5 * 60_000) { n++; tix += s.qty && s.qty > 0 ? s.qty : 1; }
+      });
+      captured24h = { sales: n, tickets: tix, complete: Math.min(...times) <= start };
+    }
+  }
+
+  const sales24hSource: Summary["derived"]["sales24hSource"] =
+    latest?.sales_24h != null ? "page" : captured24h?.complete ? "captured" : null;
+  const sales24h =
+    sales24hSource === "page" ? latest!.sales_24h : sales24hSource === "captured" ? captured24h!.sales : null;
+
+  const momentum = ratio(sales24h, avgSalesPerDay);
   const sellThrough =
     latest?.total_tickets != null && latest?.tickets_available != null &&
     latest.total_tickets + latest.tickets_available > 0
       ? latest.total_tickets / (latest.total_tickets + latest.tickets_available)
       : null;
   const spread = ratio(latest?.average_price ?? null, latest?.floor_price ?? null);
+  // Counted tickets beat an estimate when they are complete.
   const tickets24hEst =
-    latest?.sales_24h != null && ticketsPerSale != null ? latest.sales_24h * ticketsPerSale : null;
+    sales24hSource === "captured" ? captured24h!.tickets
+    : sales24h != null && ticketsPerSale != null ? sales24h * ticketsPerSale : null;
   const runwayDays =
     latest?.tickets_available != null && tickets24hEst != null && tickets24hEst > 0
       ? latest.tickets_available / tickets24hEst
@@ -232,7 +273,8 @@ export function summarise(
     }
 
     if (momentum != null && avgSalesPerDay != null) {
-      const base = `${num(latest.sales_24h)} sales in 24h vs ${round(avgSalesPerDay, 1)}/day on average (${x(momentum)})`;
+      const from = sales24hSource === "captured" ? ", counted from captured sales" : "";
+      const base = `${num(sales24h)} sales in 24h vs ${round(avgSalesPerDay, 1)}/day on average (${x(momentum)}${from})`;
       if (momentum >= 1.3) signals.push({ tone: "up", text: `Accelerating: ${base}.` });
       else if (momentum <= 0.6) signals.push({ tone: "down", text: `Slowing: ${base}.` });
       else signals.push({ tone: "neutral", text: `Steady: ${base}.` });
@@ -291,6 +333,9 @@ export function summarise(
       ticketsPerSale: ticketsPerSale == null ? null : round(ticketsPerSale),
       daysSelling,
       avgSalesPerDay: avgSalesPerDay == null ? null : round(avgSalesPerDay, 1),
+      sales24h,
+      sales24hSource,
+      captured24h,
       momentum: momentum == null ? null : round(momentum),
       sellThrough: sellThrough == null ? null : round(sellThrough, 3),
       spread: spread == null ? null : round(spread),

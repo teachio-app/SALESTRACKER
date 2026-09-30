@@ -106,7 +106,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return false;
 
     case "captured":
-      finish(tabId, { type: "result", capture: msg.capture });
+      finish(tabId, { type: "result", capture: msg.capture, missing: msg.missing ?? [], outline: msg.outline });
       return false;
 
     case "failed":

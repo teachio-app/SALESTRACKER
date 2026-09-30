@@ -35,24 +35,58 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const notKnown = (v) => v == null || /^\s*(n\/?a|-|—|–|loading\.*)?\s*$/i.test(v);
 
 /**
- * The tiles are a number with its label underneath. Find the element whose own
- * text IS the label, then walk up to the box that holds both and take the part
- * that isn't the label.
+ * An element's OWN text — its direct text nodes, not its children's.
  *
- * "Own text" matters: without it, a container holding every tile also "contains"
- * the words "Total Sales", and the match would return the whole strip.
+ * The first version compared the whole textContent to the label, and on the live
+ * page "24h Sales" never matched: the label carries an info icon with its own
+ * tooltip text inside the same element, so its textContent was the label plus a
+ * sentence. Own text is just "24h Sales".
+ */
+function ownText(el) {
+  let s = "";
+  for (const n of el.childNodes) if (n.nodeType === Node.TEXT_NODE) s += n.textContent + " ";
+  return s.replace(/\s+/g, " ").trim();
+}
+
+/** Label text as compared: lower case, stray icon glyphs ("ⓘ", "*") trimmed off. */
+const labelOf = (s) => s.toLowerCase().replace(/[^a-z0-9%]+$/i, "").replace(/^[^a-z0-9]+/i, "").trim();
+
+/** What a tile's value looks like: a count, money, a date, or "N/A". */
+const VALUE =
+  /^(n\/?a|—|–|-|[€$£]?\s?\d[\d.,\s]*\s?[€$£]?|[A-Za-z]{3,9}\.? \d{1,2},? \d{4}|\d{1,2}\.? [A-Za-z]{3,9}\.?,? \d{4})$/i;
+
+const LABELS = Object.values(TILES);
+
+/**
+ * A tile is a value and a label in one box. Find the element whose own text is
+ * the label, then climb until a box also holds a value-shaped element, and take
+ * the value nearest the label.
+ *
+ * Two guards against reading a NEIGHBOUR's number: the climb stops at any box
+ * that also holds another tile's label (it has left this tile), and among the
+ * values in a box the one closest to the label in page order wins.
  */
 function readTile(label) {
-  const wanted = label.toLowerCase();
-  const nodes = document.querySelectorAll("div, span, p, dt, dd, h1, h2, h3, h4, h5, h6, small, label");
-  for (const node of nodes) {
-    if (text(node).toLowerCase() !== wanted) continue;
+  for (const node of document.querySelectorAll("body *")) {
+    if (labelOf(ownText(node)) !== label) continue;
+
     let box = node.parentElement;
-    for (let up = 0; up < 3 && box; up++) {
-      const rest = text(box).replace(new RegExp(label, "i"), "").trim();
-      // A tile holds the label and one value. Anything much longer is a
-      // container that swallowed its neighbours.
-      if (rest && rest.length <= 40) return rest;
+    for (let up = 0; up < 4 && box; up++) {
+      const all = text(box).toLowerCase();
+      if (LABELS.some((l) => l !== label && all.includes(l))) break; // left the tile
+
+      const els = [...box.querySelectorAll("*")];
+      const at = els.indexOf(node);
+      let best = null;
+      let bestDist = Infinity;
+      els.forEach((el, i) => {
+        if (el === node || node.contains(el) || el.contains(node)) return;
+        const t = ownText(el);
+        if (!t || !VALUE.test(t)) return;
+        const dist = Math.abs(i - at);
+        if (dist < bestDist) { best = t; bestDist = dist; }
+      });
+      if (best != null) return best;
       box = box.parentElement;
     }
   }
@@ -153,34 +187,76 @@ function readEvent() {
   // be stable, since it is what joins one refresh of this event to the next.
   const sourceEventId = segments[segments.length - 1] || "";
 
-  // The date / venue / "City, Country" lines sit under the heading.
-  let dateText = "";
-  let venue = "";
-  let city = "";
-  let country = "";
-  if (h) {
-    const near = [];
-    let node = h.parentElement;
-    for (let up = 0; up < 3 && node; up++) {
-      for (const el of node.children) {
-        const t = text(el);
-        if (t && t !== name && t.length < 120 && !near.includes(t)) near.push(t);
-      }
-      if (near.length >= 3) break;
-      node = node.parentElement;
+  const { dateText, venue, city, country } = readHeaderLines(h);
+  return { sourceEventId, url: location.href, name, dateText, venue, city, country, vggUrl: readVggLink(h) };
+}
+
+/** "Sunday, January 17, 2027", "January 17, 2027", "17 January 2027", "17.01.2027". */
+const DATE_LINE =
+  /((mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?,?\s+)?([a-z]{3,9}\.?\s+\d{1,2},?\s+\d{4}|\d{1,2}\.?\s+[a-z]{3,9}\.?,?\s+\d{4}|\d{1,2}[./]\d{1,2}[./]\d{4})/i;
+/** Header text that is chrome, not event detail. */
+const NOT_DETAIL = /^(share|compact view|↗|sales tracker|sales statistics|open|copy|view)$/i;
+
+/**
+ * The date, venue and "City, Country" under the event's name.
+ *
+ * Read as the page's text LINES in order after the heading, whatever elements
+ * hold them. The first version walked the heading's parent elements and assumed
+ * the three lines were siblings; on the live page they weren't, and every event
+ * came back with no date — which took "days to event" and the runway with it.
+ * Lines are classified by what they look like, and reading stops at the first
+ * statistics label, before any number tile can be mistaken for a venue.
+ */
+function readHeaderLines(h) {
+  const out = { dateText: "", venue: "", city: "", country: "" };
+  if (!h) return out;
+
+  const lines = [];
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  let started = false;
+  for (let n = walker.nextNode(); n && lines.length < 14; n = walker.nextNode()) {
+    if (!started) {
+      // Start after the heading's own text.
+      if (h.contains(n)) started = true;
+      continue;
     }
-    for (const t of near) {
-      if (!dateText && /\b(19|20)\d{2}\b/.test(t) && /[A-Za-z]{3}/.test(t)) dateText = t;
-      else if (dateText && !venue && !t.includes(",")) venue = t;
-      else if (dateText && !city && t.includes(",")) {
-        const [c, ...rest] = t.split(",");
-        city = c.trim();
-        country = rest.join(",").trim();
-      }
-    }
+    if (h.contains(n)) continue;
+    const el = n.parentElement;
+    if (!el || el.closest("script, style, noscript, button, nav")) continue;
+    const t = n.textContent.replace(/\s+/g, " ").trim();
+    if (!t) continue;
+    const low = labelOf(t);
+    if (low === "sales statistics" || LABELS.includes(low)) break;
+    if (t.length < 3 || NOT_DETAIL.test(t)) continue;
+    lines.push(t);
   }
 
-  return { sourceEventId, url: location.href, name, dateText, venue, city, country, vggUrl: readVggLink(h) };
+  for (const t of lines) {
+    if (!out.dateText && DATE_LINE.test(t)) { out.dateText = t; continue; }
+    // "Manchester, United Kingdom": one comma, words either side, no year.
+    const loc = t.match(/^([^,\d]{2,60}),\s*([^,\d]{2,60})$/);
+    if (!out.city && loc) { out.city = loc[1].trim(); out.country = loc[2].trim(); continue; }
+    if (!out.venue && !/\d{4}/.test(t) && t.length <= 80 && !/[€$£]/.test(t)) { out.venue = t; continue; }
+  }
+  return out;
+}
+
+/**
+ * The page's visible text in order, short — for the tracker to show when some
+ * field couldn't be read. It is what it takes to fix the reader for a layout it
+ * hasn't seen, without anyone having to dig through DevTools.
+ */
+function outline() {
+  const rows = [];
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n && rows.length < 70; n = walker.nextNode()) {
+    const el = n.parentElement;
+    if (!el || el.closest("script, style, noscript, table tbody")) continue;
+    const t = n.textContent.replace(/\s+/g, " ").trim();
+    if (!t) continue;
+    rows.push(`${el.tagName.toLowerCase()}: ${t.slice(0, 80)}`);
+  }
+  return rows;
 }
 
 /** The ↗ link beside the title, when it points at a viagogo event. */
@@ -208,6 +284,22 @@ function buildCapture() {
   const event = readEvent();
   if (!event.name || !event.sourceEventId) return null;
   return { source: "tikey", capturedAt: new Date().toISOString(), currency: readCurrency(), event, stats: readStats(), sales: readSales() };
+}
+
+/** Fields a complete read should have, named — so a partial read can say what's missing. */
+function missingFields(c) {
+  const miss = [];
+  if (!c.event.dateText) miss.push("event date");
+  if (!c.event.venue) miss.push("venue");
+  if (!c.event.city) miss.push("city");
+  // A tile that was never found, and one that still reads N/A after the wait —
+  // both mean the number isn't in the capture, and both are worth saying.
+  for (const [key, label] of Object.entries(TILES)) {
+    if (!(key in c.stats)) miss.push(`“${label}” tile`);
+    else if (notKnown(c.stats[key])) miss.push(`“${label}” tile (still N/A)`);
+  }
+  if (!c.sales.length) miss.push("sales table");
+  return miss;
 }
 
 /** What the page is showing right now, in the words an error message needs. */
@@ -276,7 +368,10 @@ const send = (msg) => chrome.runtime.sendMessage(msg).catch(() => {});
       const complete = haveTotals && haveSupply && c.sales.length > 0;
       const goodEnough = haveTotals && elapsed >= COMPLETE_BY;
       if (settled && (complete || goodEnough)) {
-        send({ type: "captured", capture: c });
+        const missing = missingFields(c);
+        // The outline travels only when something is missing: it exists to fix
+        // the reader, and a complete read has nothing to fix.
+        send({ type: "captured", capture: c, missing, ...(missing.length ? { outline: outline() } : {}) });
         return;
       }
     }
