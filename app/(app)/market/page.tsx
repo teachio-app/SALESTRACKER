@@ -1,15 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import type { Signal, Summary, SummarySnapshot } from "@/lib/market/summary";
+import { parseVggLink } from "@/lib/market/vgg";
 import MarketChart from "./MarketChart";
+import { readFromTikey, saveCapture, useTikeyHelper, ReadError, type ReadDiag } from "./tikey";
 
 // ─────────────────────────────────────────────────────────────
-// Market — what the resale market is doing for events you've looked at.
+// Market — what the resale market is doing for an event.
 //
-// Everything here is YOUR data: sales-tracker pages you opened with the capture
-// extension installed, stored in your own tables. Paste a viagogo link to jump
-// to an event, or pick one from the list.
+// Paste a viagogo link and press Find: the "DeskTracker × Tikey" extension opens
+// that event's Sales Tracker page in a background tab of your own browser, reads
+// it, and the numbers land here — stored in your own tables, so every Find adds
+// a point to the event's history. Without the extension, the page still shows
+// everything read before.
 //
 // The page reads; it does not advise. Every figure is either a number off the
 // captured page or a derivation from those numbers whose working is shown, and
@@ -75,6 +79,13 @@ function ago(iso: string | null): string {
   return `${Math.round(h / 24)} days ago`;
 }
 
+/** "30 Sept 2026, 13:37:05" in the viewer's own time zone, not the stored UTC. */
+function localStamp(iso: string): string {
+  return new Date(iso).toLocaleString("en-GB", {
+    day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+}
+
 function when(days: number | null): string {
   if (days == null) return "";
   if (days === 0) return "today";
@@ -104,15 +115,25 @@ export default function MarketPage() {
   const [finding, setFinding] = useState(false);
   const [findMsg, setFindMsg] = useState<ReactNode>(null);
 
+  const helper = useTikeyHelper();
+  // The progress line while the extension reads; null when idle.
+  const [reading, setReading] = useState<string | null>(null);
+  // Bumped after a refresh so the open event reloads with its new snapshot.
+  const [version, setVersion] = useState(0);
+
+  const loadList = useCallback(() => {
+    getJson<MarketEvent[]>("/api/market/events")
+      .then((list) => { setEvents(list); setError(null); })
+      .catch((e: Error) => { setEvents([]); setError(e.message); });
+  }, []);
+
   useEffect(() => {
     // An ?id= in the address opens that event directly, so a detail view can
     // be bookmarked or reopened from history.
     const id = new URLSearchParams(window.location.search).get("id");
     if (id) setSelected(id);
-    getJson<MarketEvent[]>("/api/market/events")
-      .then((list) => { setEvents(list); setError(null); })
-      .catch((e: Error) => { setEvents([]); setError(e.message); });
-  }, []);
+    loadList();
+  }, [loadList]);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -122,18 +143,40 @@ export default function MarketPage() {
 
     if (!selected) { setDetail(null); setDetailError(null); return; }
     let live = true;
-    setDetail(null);
     setDetailError(null);
     getJson<Detail>(`/api/market/events/${selected}`)
       .then((d) => { if (live) setDetail(d); })
       .catch((e: Error) => { if (live) setDetailError(e.message); });
     return () => { live = false; };
-  }, [selected]);
+  }, [selected, version]);
 
   function open(id: string, how: "id" | "name" | null = null) {
+    if (id !== selected) setDetail(null);
     setMatchedBy(how);
     setSelected(id);
     window.scrollTo({ top: 0 });
+  }
+
+  /**
+   * Read one event from Tikey through the extension, store it, open it.
+   * Returns false (and says why) if the read didn't happen.
+   */
+  async function readAndStore(vggId: string): Promise<boolean> {
+    setReading("Asking the extension…");
+    try {
+      const capture = await readFromTikey(vggId, setReading);
+      setReading("Saving…");
+      const id = await saveCapture(capture, vggId);
+      open(id, "id");
+      setVersion((v) => v + 1);
+      loadList();
+      return true;
+    } catch (err) {
+      setFindMsg(<ReadFailed error={err} />);
+      return false;
+    } finally {
+      setReading(null);
+    }
   }
 
   async function find(e: FormEvent) {
@@ -143,25 +186,43 @@ export default function MarketPage() {
     setFinding(true);
     setFindMsg(null);
     try {
-      const r = await getJson<Resolve>(`/api/market/events?link=${encodeURIComponent(q)}`);
-      if (r.result === "found") {
-        open(r.id, r.matchedBy);
-        setLink("");
-      } else if (r.result === "not_captured") {
-        setFindMsg(
-          <>
-            <strong>Not captured yet.</strong> Open this event once on the sales-tracker site with the
-            capture extension installed, then search again.
-            {r.eventId && <> <span className="nums">(viagogo E-{r.eventId})</span></>}
-          </>
-        );
-      } else {
+      const ref = parseVggLink(q);
+      if (!ref) {
         setFindMsg(
           <>
             <strong>That isn’t a viagogo event link I can read.</strong> Expected something like{" "}
             <code>https://www.viagogo.com/…/E-151234567</code>.
           </>
         );
+        return;
+      }
+
+      // With the extension and an event id: always read fresh — that is what
+      // Find is for, and each read adds a point to the history.
+      if (ref.eventId && helper !== "missing" && helper !== "checking") {
+        if (await readAndStore(ref.eventId)) setLink("");
+        else {
+          // The read failed, but an earlier capture is still worth showing.
+          const r = await getJson<Resolve>(`/api/market/events?link=${encodeURIComponent(q)}`);
+          if (r.result === "found") open(r.id, r.matchedBy);
+        }
+        return;
+      }
+
+      // Otherwise: whatever has been read before.
+      const r = await getJson<Resolve>(`/api/market/events?link=${encodeURIComponent(q)}`);
+      if (r.result === "found") {
+        open(r.id, r.matchedBy);
+        setLink("");
+      } else if (!ref.eventId) {
+        setFindMsg(
+          <>
+            <strong>This link has no viagogo event id.</strong> Paste the event’s own page link — the one
+            ending in <code>/E-</code> and a number.
+          </>
+        );
+      } else {
+        setFindMsg(<HelperMissing />);
       }
     } catch (err) {
       setFindMsg(<><strong>Search failed.</strong> {(err as Error).message}</>);
@@ -169,6 +230,9 @@ export default function MarketPage() {
       setFinding(false);
     }
   }
+
+  const canRead = helper !== "missing" && helper !== "checking";
+  const busy = finding || reading != null;
 
   return (
     <>
@@ -182,13 +246,19 @@ export default function MarketPage() {
             aria-label="viagogo event link"
             spellCheck={false}
           />
-          <button className="btn btn-primary" disabled={finding || !link.trim()}>
-            {finding ? "Finding…" : "Find"}
+          <button className="btn btn-primary" disabled={busy || !link.trim()}>
+            {reading ? "Reading…" : finding ? "Finding…" : "Find"}
           </button>
         </form>
       </div>
 
-      {findMsg && <div className="chart-notice market-msg">{findMsg}</div>}
+      {reading && (
+        <div className="market-reading" role="status" aria-live="polite">
+          <span className="market-spinner" aria-hidden />
+          <span><strong>Reading Tikey</strong> — {reading}</span>
+        </div>
+      )}
+      {findMsg && !reading && <div className="chart-notice market-msg">{findMsg}</div>}
 
       {isMissingTables(error) ? (
         <div className="chart-notice">
@@ -205,12 +275,13 @@ export default function MarketPage() {
           detail={detail}
           error={detailError}
           matchedBy={matchedBy}
-          onBack={() => { setSelected(null); setMatchedBy(null); }}
+          onBack={() => { setSelected(null); setMatchedBy(null); setFindMsg(null); }}
+          onRefresh={canRead && !busy ? (vggId) => { setFindMsg(null); readAndStore(vggId); } : null}
         />
       ) : events == null ? (
         <div className="empty">Loading…</div>
       ) : !error && events.length === 0 ? (
-        <NothingYet />
+        <NothingYet helper={helper} />
       ) : events.length > 0 ? (
         <EventList events={events} onOpen={(id) => open(id)} />
       ) : null}
@@ -336,32 +407,91 @@ function Pace({ momentum }: { momentum: number | null }) {
   );
 }
 
-function NothingYet() {
+function NothingYet({ helper }: { helper: string }) {
   return (
     <div className="chart-card market-empty">
-      <h2>No events captured yet</h2>
-      <ol>
-        <li>Install the capture extension from the <code>extension/</code> folder (its README has the steps).</li>
-        <li>Open any event’s sales-tracker page as you normally would.</li>
-        <li>It appears here — and every later visit adds a point to its history.</li>
-      </ol>
+      <h2>No events yet</h2>
+      {helper === "missing" ? (
+        <>
+          <p className="market-empty-lead">
+            Install the <strong>DeskTracker × Tikey</strong> extension once, then paste a viagogo event link above.
+          </p>
+          <HelperSteps />
+        </>
+      ) : (
+        <p className="market-empty-lead">
+          Paste a viagogo event link above and press <strong>Find</strong>. The extension reads the event from
+          Tikey in a background tab of this browser and it appears here — every later Find adds a point to its
+          history.
+        </p>
+      )}
       <p className="hint">
-        This data has no archive: a tracker’s history starts the day it begins watching. The sooner events
-        are captured, the more there is to compare later.
+        This data has no archive: a tracker’s history starts the day it begins watching. The sooner an event is
+        read, the more there is to compare later.
       </p>
     </div>
+  );
+}
+
+/** One-time install, in the words of the screens it happens on. */
+function HelperSteps() {
+  return (
+    <ol className="market-steps">
+      <li>Open <code>chrome://extensions</code> (Edge: <code>edge://extensions</code>).</li>
+      <li>Turn on <strong>Developer mode</strong>, top right.</li>
+      <li><strong>Load unpacked</strong> → choose the <code>extension</code> folder inside the tracker’s project folder.</li>
+      <li>Reload this page. Be signed in to Tikey in this same browser.</li>
+    </ol>
+  );
+}
+
+function HelperMissing() {
+  return (
+    <>
+      <strong>Not read yet — the DeskTracker × Tikey extension isn’t installed in this browser.</strong> It is
+      what opens the event on Tikey for you. One-time setup:
+      <HelperSteps />
+    </>
+  );
+}
+
+/**
+ * A failed read, said plainly — and, when the extension reached the page, what
+ * it found there. That detail is what it takes to fix the reader if Tikey
+ * changes its layout, so it is shown rather than logged somewhere nobody looks.
+ */
+function ReadFailed({ error }: { error: unknown }) {
+  const message = error instanceof Error ? error.message : String(error);
+  const diag: ReadDiag | undefined = error instanceof ReadError ? error.diag : undefined;
+  return (
+    <>
+      <strong>Couldn’t read this event from Tikey.</strong> {message}
+      {diag && (
+        <details className="market-diag">
+          <summary>What the extension saw</summary>
+          <ul>
+            <li>Page: <code>{diag.title || "—"}</code> <span className="market-where">{diag.path}</span></li>
+            <li>Event name found: <code>{diag.heading || "none"}</code></li>
+            <li>Number tiles: {diag.tilesLoaded ?? 0} loaded of {diag.tilesFound ?? 0} found (8 expected)</li>
+            <li>Sale rows: {diag.saleRows ?? 0}</li>
+          </ul>
+        </details>
+      )}
+    </>
   );
 }
 
 // ── One event ─────────────────────────────────────────────────────────
 
 function EventDetail({
-  detail, error, matchedBy, onBack,
+  detail, error, matchedBy, onBack, onRefresh,
 }: {
   detail: Detail | null;
   error: string | null;
   matchedBy: "id" | "name" | null;
   onBack: () => void;
+  /** Present when the extension is installed and idle. */
+  onRefresh: ((vggId: string) => void) | null;
 }) {
   const back = <button className="btn btn-ghost btn-sm market-back" onClick={onBack}>← All events</button>;
   if (error) return <>{back}<div className="error-banner"><strong>Couldn’t load this event.</strong> {error}</div></>;
@@ -372,10 +502,19 @@ function EventDetail({
   const cur = s.currency;
   const d = s.derived;
   const at = snapshots.map((x) => x.captured_at);
+  const vggId = e.vgg_event_id;
 
   return (
     <>
-      {back}
+      <div className="market-detail-bar">
+        {back}
+        {vggId && (
+          <button className="btn btn-primary btn-sm" disabled={!onRefresh} onClick={() => onRefresh?.(vggId)}
+                  title={onRefresh ? "Read this event from Tikey again" : "Needs the DeskTracker × Tikey extension"}>
+            ↻ Refresh from Tikey
+          </button>
+        )}
+      </div>
 
       <div className="market-head">
         <h2>{e.name}</h2>
@@ -487,7 +626,7 @@ function EventDetail({
                 <tbody>
                   {[...snapshots].reverse().map((x) => (
                     <tr key={x.captured_at}>
-                      <td className="date-cell nums">{x.captured_at.slice(0, 16).replace("T", " ")}</td>
+                      <td className="date-cell nums">{localStamp(x.captured_at)}</td>
                       <td className="amount-col nums">{int(x.total_tickets)}</td>
                       <td className="amount-col nums">{int(x.total_sales)}</td>
                       <td className="amount-col nums">{int(x.sales_24h)}</td>

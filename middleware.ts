@@ -13,22 +13,16 @@ import { AUTH_COOKIE, authToken, safeEqual } from "@/lib/auth";
 // Protects the dashboard and /api/tickets. Skips /api/cron/poll-mail (its own
 // CRON_SECRET Bearer auth) and /login + /api/login (must be reachable logged-out).
 //
-// /api/market/ingest — and ONLY that route — is skipped for the same reason as
-// /api/cron: it carries its own Bearer token and is called by the browser
-// extension, which has no session cookie. It also needs its CORS preflight to
-// get through: an OPTIONS request never carries credentials, so a matched
-// preflight would 401 and the capture would fail before the POST was sent.
-//
-// It used to skip the whole /api/market prefix. That was harmless while ingest
-// was the only route there, and a data leak the moment the Market page's own
-// API was added beside it — every captured event readable without a login. The
-// exclusion is now exact, so anything new under /api/market is gated by default.
+// Everything under /api/market is gated like the rest of the dashboard. It once
+// had an unauthenticated ingest route for a browser extension to post to; the
+// Market page now receives what the extension reads and stores it through
+// /api/market/capture with the session it already has, so no exemption is left.
 // ─────────────────────────────────────────────────────────────
 
 export const config = {
   // Also skip the app icon so the browser-tab favicon loads without a session
   // (otherwise /icon.svg redirects to /login and the tab shows no icon).
-  matcher: ["/((?!api/cron|api/market/ingest|_next|favicon.ico|icon.svg).*)"],
+  matcher: ["/((?!api/cron|_next|favicon.ico|icon.svg).*)"],
 };
 
 export async function middleware(req: NextRequest) {

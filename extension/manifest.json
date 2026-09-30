@@ -1,21 +1,25 @@
 {
   "manifest_version": 3,
-  "name": "DeskTracker Market Capture",
-  "version": "1.0.0",
-  "description": "Saves the Sales Tracker pages you open into your own DeskTracker, so you build a price and volume history nobody can take away.",
+  "name": "DeskTracker × Tikey",
+  "version": "2.0.0",
+  "description": "Lets your DeskTracker read a Tikey Sales Tracker page in your own browser, when you ask for it from the tracker.",
   "permissions": ["storage"],
   "host_permissions": [
-    "https://*.tikeymanager.com/*"
+    "https://www.tikeymanager.com/*"
   ],
-  "options_page": "options.html",
-  "action": {
-    "default_title": "DeskTracker Market Capture — open Options to configure"
+  "background": {
+    "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["https://*.tikeymanager.com/*"],
-      "js": ["content.js"],
+      "matches": ["https://www.tikeymanager.com/salestracker/*"],
+      "js": ["reader.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://ticket-tracker-two.vercel.app/*", "http://localhost/*"],
+      "js": ["bridge.js"],
+      "run_at": "document_start"
     }
   ]
 }

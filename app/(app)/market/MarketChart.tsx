@@ -40,15 +40,24 @@ const GRID = "#242424";
 const MUTED = "#6f6f6f";
 const INK = "#ededed";
 
+const HOUR = 3_600_000;
 const DAY = 86_400_000;
 
+/**
+ * In the viewer's own time zone — a capture made at 13:37 in Prague is labelled
+ * 13:37, not the 11:37 UTC it is stored as.
+ *
+ * Under two days the hour is the useful part; under an hour, the seconds too,
+ * or two refreshes a minute apart get the same label and the axis says nothing.
+ */
 function dateLabel(ms: number, spanMs: number): string {
   const d = new Date(ms);
-  const day = d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
-  // Under two days, the hour is the useful part.
-  return spanMs < 2 * DAY
-    ? `${day} ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" })}`
-    : day;
+  const day = d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  if (spanMs >= 2 * DAY) return day;
+  const time = d.toLocaleTimeString("en-GB", {
+    hour: "2-digit", minute: "2-digit", ...(spanMs < HOUR ? { second: "2-digit" } : {}),
+  });
+  return `${day} ${time}`;
 }
 
 /**
