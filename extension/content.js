@@ -171,7 +171,27 @@ function readEvent() {
     }
   }
 
-  return { sourceEventId, url, name, dateText, venue, city, country };
+  return { sourceEventId, url, name, dateText, venue, city, country, vggUrl: readVggLink(h) };
+}
+
+/**
+ * The page's link out to the event on viagogo — the ↗ beside the title.
+ *
+ * Looked for near the heading first, then anywhere: a sidebar or footer can
+ * link to viagogo's home page, and that must not be mistaken for this event.
+ * Only a link carrying an event id ("/E-<digits>") counts, for the same reason.
+ */
+function readVggLink(heading) {
+  const isEventLink = (a) => /viagogo\./i.test(a.href) && /\/E-\d{5,}/i.test(a.href);
+  let scope = heading ? heading.parentElement : null;
+  for (let up = 0; up < 4 && scope; up++) {
+    const hit = [...scope.querySelectorAll("a[href]")].find(isEventLink);
+    if (hit) return hit.href;
+    scope = scope.parentElement;
+  }
+  const anywhere = [...document.querySelectorAll("a[href]")].filter(isEventLink);
+  // Anywhere is only trusted when it is unambiguous.
+  return anywhere.length === 1 ? anywhere[0].href : "";
 }
 
 /** The currency selector, so the server doesn't have to guess from a symbol. */

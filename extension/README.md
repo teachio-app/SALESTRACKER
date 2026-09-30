@@ -39,6 +39,14 @@ Before it can store anything, the tables have to exist: run `supabase/schema.sql
 in the Supabase SQL editor, and set `MARKET_INGEST_TOKEN` in the Vercel project's
 environment variables.
 
+## Where it shows up
+
+The **Market** page in DeskTracker. Every captured event is listed there with its
+latest numbers; open one for the reading, its history charts and the captured
+sales. Paste a viagogo event link into the box at the top to jump straight to it —
+the capture records the viagogo link printed beside the event's title, so a
+pasted link lands on the right event exactly.
+
 ## Checking it works
 
 Open any Sales Tracker page and the browser console (F12). Each capture logs a

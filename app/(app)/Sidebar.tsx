@@ -19,6 +19,7 @@ export default function Sidebar() {
     { href: "/events", label: "Events", badge: 0, alert: false },
     { href: "/cashflow", label: "Cashflow", badge: 0, alert: false },
     { href: "/charts", label: "Charts", badge: 0, alert: false },
+    { href: "/market", label: "Market", badge: 0, alert: false },
     { href: "/review", label: "Review", badge: reviewCount, alert: false },
     // The badge counts what's still open; it turns red once something is late,
     // so a missed deadline is visible from any page without opening the list.

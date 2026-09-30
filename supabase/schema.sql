@@ -420,3 +420,9 @@ alter table market_sales     enable row level security;
 create index if not exists market_snapshots_event_idx on market_snapshots (event_id, captured_at desc);
 create index if not exists market_sales_event_idx     on market_sales (event_id, sold_at_approx desc);
 create index if not exists market_events_date_idx     on market_events (event_date);
+
+-- The viagogo event a captured page is about, read off the viagogo link on
+-- that page. It is what lets a pasted viagogo link on the Market page land on
+-- the right capture exactly, instead of by guessing from the name.
+alter table market_events add column if not exists vgg_event_id text;
+create index if not exists market_events_vgg_idx on market_events (vgg_event_id);

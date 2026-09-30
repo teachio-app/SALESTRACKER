@@ -37,7 +37,7 @@ function barPath(x: number, y: number, w: number, h: number, up: boolean): strin
 }
 
 /** Compact axis label: 5k / 2.5k / 800, no trailing ".0". */
-function money(n: number): string {
+export function money(n: number): string {
   const a = Math.abs(n);
   let s: string;
   if (a >= 1000) {
@@ -53,7 +53,7 @@ function fmt(n: number): string {
   return Math.round(n).toLocaleString("en-US");
 }
 
-function ticks(min: number, max: number, n = 4): number[] {
+export function ticks(min: number, max: number, n = 4): number[] {
   const span = max - min || 1;
   const raw = span / n;
   const mag = Math.pow(10, Math.floor(Math.log10(raw)));

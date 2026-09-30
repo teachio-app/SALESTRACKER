@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { parseCapture } from "@/lib/market/parse";
+import { parseVggLink } from "@/lib/market/vgg";
 import type { Capture } from "@/lib/market/types";
 import { supabaseAdmin } from "@/lib/supabase";
 
@@ -81,6 +82,9 @@ export async function POST(req: Request) {
   const parsed = parseCapture(body);
   const db = supabaseAdmin();
   const source = (body.source || "tikey").trim();
+  // Written only when this capture actually saw the link. A later capture whose
+  // page rendered without it must not wipe an id an earlier one recorded.
+  const vggEventId = parseVggLink(body.event.vggUrl)?.eventId ?? null;
 
   // ── the event ──
   // Upsert on (source, source_event_id). `tier` is deliberately NOT written:
@@ -99,6 +103,7 @@ export async function POST(req: Request) {
         city: body.event.city?.trim() || null,
         country: body.event.country?.trim() || null,
         last_captured_at: parsed.capturedAt,
+        ...(vggEventId ? { vgg_event_id: vggEventId } : {}),
       },
       { onConflict: "source,source_event_id" }
     )

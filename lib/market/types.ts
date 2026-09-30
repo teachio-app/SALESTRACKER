@@ -48,6 +48,8 @@ export type RawEvent = {
   venue?: string;         // "Co-op Live"
   city?: string;          // "Manchester"
   country?: string;       // "United Kingdom"
+  /** The page's link out to the event on viagogo, when it has one. */
+  vggUrl?: string;
 };
 
 /** The whole POST body. */
